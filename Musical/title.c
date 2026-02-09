@@ -11,8 +11,6 @@
 #include "mouse.h"   
 #include "animation.h"        
 #include "easing.h"       
-#include "player.h"
-#include "star.h"
 #include "gamepad.h"
 #include "dynamic_font_atlas.h"
 #include <SDL2/SDL_mixer.h>
@@ -141,8 +139,6 @@ static void init(){
     trackSE = Mix_LoadWAV("sound/決定ボタンを押す41.mp3");
     Mix_VolumeChunk(trackSE, (int)(MIX_MAX_VOLUME * 0.75f));
 
-    starInit();
-
     //フェードインの開始
     alphaTo(&fade, 0);
     setDuration(500);
@@ -259,7 +255,6 @@ static void draw(){
     spriteDraw(&halo3);
     spriteDraw(&halo2);
     spriteDraw(&halo1);
-    starDraw();
     spriteDraw(&field);
 
     drawOutlineTitleText("彗　星　の　カ　ケ　ラ", 1);

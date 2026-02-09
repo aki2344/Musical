@@ -14,7 +14,7 @@
     <ProjectGuid>{07013933-DEF1-4B29-BDCD-CCAC881C2AE6}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>ClickGame</RootNamespace>
-    <ProjectName>Metronome</ProjectName>
+    <ProjectName>Musical</ProjectName>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -89,18 +89,18 @@
     <ClCompile Include="dynamic_font_atlas.c" />
     <ClCompile Include="easing.c" />
     <ClCompile Include="animation.c" />
-    <ClCompile Include="enemy.c" />
     <ClCompile Include="gamepad.c" />
     <ClCompile Include="image.c" />
-    <ClCompile Include="jewelry.c" />
     <ClCompile Include="key.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="mainGame.c" />
+    <ClCompile Include="midi_smf.c" />
     <ClCompile Include="mouse.c" />
+    <ClCompile Include="musicEvent.c">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="particle.c" />
-    <ClCompile Include="player.c" />
     <ClCompile Include="sprite.c" />
-    <ClCompile Include="star.c" />
     <ClCompile Include="title.c" />
     <ClCompile Include="vector2.c" />
   </ItemGroup>
@@ -108,18 +108,18 @@
     <ClInclude Include="dynamic_font_atlas.h" />
     <ClInclude Include="easing.h" />
     <ClInclude Include="animation.h" />
-    <ClInclude Include="enemy.h" />
     <ClInclude Include="gamepad.h" />
     <ClInclude Include="image.h" />
-    <ClInclude Include="jewelry.h" />
     <ClInclude Include="key.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="mainGame.h" />
+    <ClInclude Include="midi_smf.h" />
     <ClInclude Include="mouse.h" />
+    <ClInclude Include="musicEvent.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
+    </ClInclude>
     <ClInclude Include="particle.h" />
-    <ClInclude Include="player.h" />
     <ClInclude Include="sprite.h" />
-    <ClInclude Include="star.h" />
     <ClInclude Include="title.h" />
     <ClInclude Include="vector2.h" />
   </ItemGroup>

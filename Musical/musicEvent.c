@@ -1,4 +1,5 @@
 #include "musicEvent.h"
+#include <stdlib.h>
 
 static AppState st;
 static SDL_AudioSpec want;
@@ -7,29 +8,32 @@ static double sec;
 static Uint32 lastTitle = 0;
 static char info[256] = "";
 
+static void on_tick_beat(AppState* st);
+static void on_tick_half(AppState* st);
+static void on_tick_quarter(AppState* st);
+static void on_tick_triplet(AppState* st);
+static void on_frame_event_0(AppState* st, int musicFrame);
+static void on_frame_event_1(AppState* st, int musicFrame);
+
 static void dispatch_midi_note(AppState* st, const AppEvent* ev)
 {
     if (ev->kind != EV_MIDI_NOTE) return;
 
-    // —áFNoteOn‚¾‚¯g‚¤iNoteOff‚à•K—v‚È‚ç‰º‚Åon=false‚ğ“n‚·j
-    if (!ev->on) {
-        // NoteOff‚à’Ê’m‚µ‚½‚¢ê‡F
-        // NoteHandler h = st->noteMap[ev->note];
-        // if (h) h(st, ev->note, ev->vel, false);
-        return;
-    }
+    if (ev->track >= 128 || !st->midiTrackEnabled[ev->track]) return;
 
     uint8_t n = ev->note;
 
-    // ˜A‘Å—}§i“¯ƒm[ƒg‚Ì’ZŠÔ˜A‘Å‚ğ’e‚­j
-    int64_t last = st->lastFiredSample[n];
-    if (last >= 0 && (ev->sample - last) < st->debounceSamples) {
-        return;
+    if (ev->on) {
+        // é€£æ‰“æŠ‘åˆ¶ï¼ˆåŒãƒãƒ¼ãƒˆã®çŸ­æ™‚é–“é€£æ‰“ã‚’å¼¾ãï¼‰
+        int64_t last = st->lastFiredSample[n];
+        if (last >= 0 && (ev->sample - last) < st->debounceSamples) {
+            return;
+        }
+        st->lastFiredSample[n] = ev->sample;
     }
-    st->lastFiredSample[n] = ev->sample;
 
-    NoteHandler h = st->noteMap[n];
-    if (h) h(st, n, ev->vel, true);
+    MidiTrackHandler h = st->midiTrackMap[ev->track];
+    if (h) h(st, ev->track, n, ev->vel, ev->on != 0);
 }
 
 static double wrap_phase(double phase, double step) {
@@ -40,15 +44,15 @@ static double wrap_phase(double phase, double step) {
 }
 
 
-// x‚Ì¬”•”‚ğ [0,1) ‚Éi•‰‚àOKj
+// xã®å°æ•°éƒ¨ã‚’ [0,1) ã«ï¼ˆè² ã‚‚OKï¼‰
 static double frac01(double x) {
     double f = x - floor(x);
     if (f < 0.0) f += 1.0;
     return f;
 }
 
-// lanes ‚Ì nextBeat ‚ğu¡‚ÌbeatAbsŠî€‚ÅŸ‚Ì‹«ŠEv‚É‡‚í‚¹‚é
-// TickLane‚É phaseBeat ‚ª‚ ‚é‘O’ñi–³‚¢‚È‚ç phase=0 ‚ÅOKj
+// lanes ã® nextBeat ã‚’ã€Œä»Šã®beatAbsåŸºæº–ã§æ¬¡ã®å¢ƒç•Œã€ã«åˆã‚ã›ã‚‹
+// TickLaneã« phaseBeat ãŒã‚ã‚‹å‰æï¼ˆç„¡ã„ãªã‚‰ phase=0 ã§OKï¼‰
 static void rebase_lanes(AppState* st) {
     for (int i = 0; i < TICK_MAX; i++) {
         TickLane* ln = &st->lanes[i];
@@ -56,17 +60,17 @@ static void rebase_lanes(AppState* st) {
         if (step <= 0.0) continue;
 
         double phase = 0.0;
-        // «TickLane‚É phaseBeat ‚ğ“ü‚ê‚Ä‚¢‚éê‡
+        // â†“TickLaneã« phaseBeat ã‚’å…¥ã‚Œã¦ã„ã‚‹å ´åˆ
         phase = wrap_phase(ln->phaseBeat, step);
 
-        // beatAbs ‚ğ (phaseŠî€Šiq) ‚É“Š‰e‚µ‚ÄuŸv‚ğæ‚é
+        // beatAbs ã‚’ (phaseåŸºæº–æ ¼å­) ã«æŠ•å½±ã—ã¦ã€Œæ¬¡ã€ã‚’å–ã‚‹
         double t = (st->beatAbs - phase) / step;
         double k = floor(t);
         ln->nextBeat = (k + 1.0) * step + phase;
     }
 }
-// beatAbs ‚©‚çuŒ»İ‚ÌƒIƒtƒZƒbƒgims•\¦—pjv‚ğXV‚µ‚½‚¢ê‡‚Ég‚¤
-// ¦offsetFrames‚ÍgŒ»İ‚Ì”“àˆÊ’uh‚Ì•\¦—p‚Æ‚µ‚Ä‘µ‚¦‚é
+// beatAbs ã‹ã‚‰ã€Œç¾åœ¨ã®ã‚ªãƒ•ã‚»ãƒƒãƒˆï¼ˆmsè¡¨ç¤ºç”¨ï¼‰ã€ã‚’æ›´æ–°ã—ãŸã„å ´åˆã«ä½¿ã†
+// â€»offsetFramesã¯â€œç¾åœ¨ã®æ‹å†…ä½ç½®â€ã®è¡¨ç¤ºç”¨ã¨ã—ã¦æƒãˆã‚‹
 static void sync_offset_from_beatAbs(AppState* st) {
     double beatFrac = frac01(st->beatAbs);                  // 0..1
     st->offsetFrames = beatFrac * st->samplesPerBeat;       // 0..samplesPerBeat
@@ -75,7 +79,7 @@ static void sync_offset_from_beatAbs(AppState* st) {
 static void evq_push(EventQueue* q, AppEvent e) {
     SDL_AtomicLock(&q->lock);
     int next = (q->w + 1) % EVQ_CAP;
-    if (next != q->r) {          // full‚È‚çÌ‚Ä‚éi‚Ü‚¸ˆì‚ê‚È‚¢j
+    if (next != q->r) {          // fullãªã‚‰æ¨ã¦ã‚‹ï¼ˆã¾ãšæº¢ã‚Œãªã„ï¼‰
         q->buf[q->w] = e;
         q->w = next;
     }
@@ -100,11 +104,34 @@ static double clampd(double v, double lo, double hi) {
     return v;
 }
 
+static void lock_audio_if_ready(void) {
+    if (st.dev) SDL_LockAudioDevice(st.dev);
+}
+
+static void unlock_audio_if_ready(void) {
+    if (st.dev) SDL_UnlockAudioDevice(st.dev);
+}
+
+static int frame_event_index_by_id(const FrameScheduler* fs, int id) {
+    for (int i = 0; i < fs->count; i++) {
+        if (fs->ev[i].id == id) return i;
+    }
+    return -1;
+}
+
+static int cmp_frame_event_by_frame(const void* a, const void* b) {
+    const FrameEvent* A = (const FrameEvent*)a;
+    const FrameEvent* B = (const FrameEvent*)b;
+    if (A->frame < B->frame) return -1;
+    if (A->frame > B->frame) return 1;
+    return A->id - B->id;
+}
+
 static void set_bpm_locked(AppState* st, double newBpm)
 {
     newBpm = clampd(newBpm, 20.0, 300.0);
 
-    // ‚¢‚Ü‚ÌˆÊ‘Ši”“à‚ÌˆÊ’uj‚ğ•Û
+    // ã„ã¾ã®ä½ç›¸ï¼ˆæ‹å†…ã®ä½ç½®ï¼‰ã‚’ä¿æŒ
     double beatInt = floor(st->beatAbs);
     double beatFrac = frac01(st->beatAbs);
 
@@ -112,70 +139,70 @@ static void set_bpm_locked(AppState* st, double newBpm)
     st->samplesPerBeat = (double)st->spec.freq * 60.0 / st->bpm;
     st->beatInc = 1.0 / st->samplesPerBeat;
 
-    // ˆÊ‘ŠˆÛ
+    // ä½ç›¸ç¶­æŒ
     st->beatAbs = beatInt + beatFrac;
 
-    // •\¦—pƒIƒtƒZƒbƒgXV
+    // è¡¨ç¤ºç”¨ã‚ªãƒ•ã‚»ãƒƒãƒˆæ›´æ–°
     sync_offset_from_beatAbs(st);
 
-    // ƒŒ[ƒ“‹«ŠE‚ğì‚è’¼‚·
+    // ãƒ¬ãƒ¼ãƒ³å¢ƒç•Œã‚’ä½œã‚Šç›´ã™
     rebase_lanes(st);
 }
 
 // ===============================
-// ˆÊ‘ŠƒVƒtƒgiframes’PˆÊjiSDL_LockAudioDevice’†‚ÉŒÄ‚Ôj
-//  - deltaFrames >0 ‚Åu’x‚ç‚¹‚év(Ÿ‚ÌƒNƒŠƒbƒN‚ª’x‚­‚È‚é•ûŒü)
+// ä½ç›¸ã‚·ãƒ•ãƒˆï¼ˆframeså˜ä½ï¼‰ï¼ˆSDL_LockAudioDeviceä¸­ã«å‘¼ã¶ï¼‰
+//  - deltaFrames >0 ã§ã€Œé…ã‚‰ã›ã‚‹ã€(æ¬¡ã®ã‚¯ãƒªãƒƒã‚¯ãŒé…ããªã‚‹æ–¹å‘)
 // ===============================
 static void shift_phase_frames_locked(AppState* st, double deltaFrames)
 {
     if (st->samplesPerBeat <= 0.0) return;
 
-    double deltaBeat = deltaFrames / st->samplesPerBeat; // frames¨beats
+    double deltaBeat = deltaFrames / st->samplesPerBeat; // framesâ†’beats
     st->beatAbs += deltaBeat;
 
     sync_offset_from_beatAbs(st);
     rebase_lanes(st);
 }
 
-// ms‚ÅƒVƒtƒg‚µ‚½‚¢ê‡‚Ì”–‚¢ƒ‰ƒbƒp
+// msã§ã‚·ãƒ•ãƒˆã—ãŸã„å ´åˆã®è–„ã„ãƒ©ãƒƒãƒ‘
 static void shift_phase_ms_locked(AppState* st, double deltaMs)
 {
     double deltaFrames = deltaMs * (double)st->spec.freq / 1000.0;
     shift_phase_frames_locked(st, deltaFrames);
 }
 // ===============================
-// RƒŠƒZƒbƒgiSDL_LockAudioDevice’†‚ÉŒÄ‚Ôj
-//  - musicPos, click‚ğŠmÀ‚É’â~
-//  - beatAbs ‚ğ (‰ŠúƒIƒtƒZƒbƒgms) ‚Ö
-//  - lanes/ƒLƒ…[/ƒtƒŒ[ƒ€ƒCƒxƒ“ƒg‚ğƒŠƒZƒbƒg
+// Rãƒªã‚»ãƒƒãƒˆï¼ˆSDL_LockAudioDeviceä¸­ã«å‘¼ã¶ï¼‰
+//  - musicPos, clickã‚’ç¢ºå®Ÿã«åœæ­¢
+//  - beatAbs ã‚’ (åˆæœŸã‚ªãƒ•ã‚»ãƒƒãƒˆms) ã¸
+//  - lanes/ã‚­ãƒ¥ãƒ¼/ãƒ•ãƒ¬ãƒ¼ãƒ ã‚¤ãƒ™ãƒ³ãƒˆã‚’ãƒªã‚»ãƒƒãƒˆ
 // ===============================
 static void reset_transport_locked(AppState* st, double resetOffsetMs)
 {
     st->musicPos = 0;
 
-    // ƒNƒŠƒbƒN’â~iŠmÀj
+    // ã‚¯ãƒªãƒƒã‚¯åœæ­¢ï¼ˆç¢ºå®Ÿï¼‰
     st->clickActive = false;
     st->clickPos = 0;
 
-    // beatAbs ‚ğuw’èmsƒIƒtƒZƒbƒgv‚Ö
+    // beatAbs ã‚’ã€ŒæŒ‡å®šmsã‚ªãƒ•ã‚»ãƒƒãƒˆã€ã¸
     double resetOffsetFrames = resetOffsetMs * (double)st->spec.freq / 1000.0;
     st->beatAbs = (st->samplesPerBeat > 0.0) ? (resetOffsetFrames / st->samplesPerBeat) : 0.0;
     st->beatInc = (st->samplesPerBeat > 0.0) ? (1.0 / st->samplesPerBeat) : 0.0;
 
     sync_offset_from_beatAbs(st);
 
-    // ƒLƒ…[‚ğ‹ó‚Éiaudio_cb’â~’†‚È‚Ì‚Å lock•s—vj
+    // ã‚­ãƒ¥ãƒ¼ã‚’ç©ºã«ï¼ˆaudio_cbåœæ­¢ä¸­ãªã®ã§ lockä¸è¦ï¼‰
     st->evq.r = 0;
     st->evq.w = 0;
 
-    // ƒŒ[ƒ“‹«ŠE‚ğì‚è’¼‚·
+    // ãƒ¬ãƒ¼ãƒ³å¢ƒç•Œã‚’ä½œã‚Šç›´ã™
     rebase_lanes(st);
 
-    // w’èƒtƒŒ[ƒ€ƒCƒxƒ“ƒg‚àæ“ª‚Öi•K—v‚È‚çj
+    // æŒ‡å®šãƒ•ãƒ¬ãƒ¼ãƒ ã‚¤ãƒ™ãƒ³ãƒˆã‚‚å…ˆé ­ã¸ï¼ˆå¿…è¦ãªã‚‰ï¼‰
     st->fsch.next = 0;
     for (int i = 0; i < st->fsch.count; i++) st->fsch.ev[i].fired = false;
 
-    // SDL_LockAudioDevice ‰º
+    // SDL_LockAudioDevice ä¸‹
     st->musicPos = 0;
     st->nextEvIndex = lower_bound_note_by_sample(st->song.ev, st->song.evCount, (int64_t)st->musicPos);
     for (int i = 0; i < 128; i++) st->lastFiredSample[i] = -1;
@@ -218,7 +245,7 @@ static bool load_wav_as_f32(const char* path, const SDL_AudioSpec* target, float
 
     SDL_FreeWAV(srcBuf);
 
-    // cvt.buf ‚Í target->format ‚É•ÏŠ·Ï‚İ
+    // cvt.buf ã¯ target->format ã«å¤‰æ›æ¸ˆã¿
     int bytesPerFrame = (SDL_AUDIO_BITSIZE(target->format) / 8) * target->channels;
     int frames = cvt.len_cvt / bytesPerFrame;
 
@@ -227,7 +254,7 @@ static bool load_wav_as_f32(const char* path, const SDL_AudioSpec* target, float
     return true;
 }
 
-// ƒNƒŠƒbƒN‰¹‚ğ‡¬iƒtƒ@ƒCƒ‹•s—vjF’Z‚¢ƒTƒCƒ“{w”Œ¸Š
+// ã‚¯ãƒªãƒƒã‚¯éŸ³ã‚’åˆæˆï¼ˆãƒ•ã‚¡ã‚¤ãƒ«ä¸è¦ï¼‰ï¼šçŸ­ã„ã‚µã‚¤ãƒ³ï¼‹æŒ‡æ•°æ¸›è¡°
 static bool make_click_f32(const SDL_AudioSpec* spec, float** outBuf, int* outFrames) {
     int sr = spec->freq;
     int ch = spec->channels;
@@ -240,7 +267,7 @@ static bool make_click_f32(const SDL_AudioSpec* spec, float** outBuf, int* outFr
     if (!buf) return false;
 
     double freq = 1200.0;
-    double decay = 0.008; // ¬‚³‚¢‚Ù‚Ç‰s‚¢
+    double decay = 0.008; // å°ã•ã„ã»ã©é‹­ã„
     for (int i = 0; i < frames; i++) {
         double t = (double)i / (double)sr;
         double env = exp(-t / decay);
@@ -265,6 +292,7 @@ static void push_midi_range(AppState* st, int64_t endSampleExclusive)
         AppEvent ae;
         ae.kind = EV_MIDI_NOTE;
         ae.on = e->on;
+        ae.track = e->track;
         ae.note = e->note;
         ae.vel = e->vel;
         ae.sample = e->sample;
@@ -283,23 +311,23 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
 
     SDL_memset(out, 0, len);
 
-    // ---- MIDI: ‚±‚Ìcallback‹æŠÔ‚Å“’B‚·‚éƒCƒxƒ“ƒg‚ğEVQ‚Öpushicatch-upj----
+    // ---- MIDI: ã“ã®callbackåŒºé–“ã§åˆ°é”ã™ã‚‹ã‚¤ãƒ™ãƒ³ãƒˆã‚’EVQã¸pushï¼ˆcatch-upï¼‰----
     {
-        // WAV‚ÌÄ¶ƒtƒŒ[ƒ€‚ªŠÔŠî€
+        // WAVã®å†ç”Ÿãƒ•ãƒ¬ãƒ¼ãƒ ãŒæ™‚é–“åŸºæº–
         int64_t startS = (int64_t)st->musicPos;
         int64_t endS = startS + (int64_t)frames;
         int64_t L = (int64_t)st->musicFrames;
 
-        // MIDI‚ªƒ[ƒh‚³‚ê‚Ä‚¢‚ÄAWAV‚ª‘¶İ‚·‚é‚Æ‚«‚¾‚¯“¯Šú‚³‚¹‚é
+        // MIDIãŒãƒ­ãƒ¼ãƒ‰ã•ã‚Œã¦ã„ã¦ã€WAVãŒå­˜åœ¨ã™ã‚‹ã¨ãã ã‘åŒæœŸã•ã›ã‚‹
         if (st->music && st->musicFrames > 0 && st->song.evCount > 0) {
             if (!st->musicLoop || L <= 0 || endS < L) {
                 push_midi_range(st, endS);
             }
             else {
-                // ––”öŒ×‚¬iloopj: [start..L) ‚Æ [0..wrapEnd)
+                // æœ«å°¾è·¨ãï¼ˆloopï¼‰: [start..L) ã¨ [0..wrapEnd)
                 push_midi_range(st, L);
 
-                // ƒ‹[ƒv‚µ‚½ˆµ‚¢‚É‚È‚é‚Ì‚ÅAMIDI‚ÌŸindex‚àæ“ª‚Ö–ß‚·
+                // ãƒ«ãƒ¼ãƒ—ã—ãŸæ‰±ã„ã«ãªã‚‹ã®ã§ã€MIDIã®æ¬¡indexã‚‚å…ˆé ­ã¸æˆ»ã™
                 st->nextEvIndex = 0;
 
                 int64_t wrapEnd = endS - L;
@@ -312,13 +340,13 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
 
     for (int i = 0; i < frames; i++) {
 
-        // -------- ‰¹Šy‚ÌI’[ˆ—iæ‚É‚â‚é‚Æ•ª‚©‚è‚â‚·‚¢j
+        // -------- éŸ³æ¥½ã®çµ‚ç«¯å‡¦ç†ï¼ˆå…ˆã«ã‚„ã‚‹ã¨åˆ†ã‹ã‚Šã‚„ã™ã„ï¼‰
         bool musicOk = (st->music && st->musicFrames > 0);
         if (musicOk && st->musicPos >= st->musicFrames) {
             if (st->musicLoop) {
                 st->musicPos = 0;
 
-                // ƒtƒŒ[ƒ€ƒCƒxƒ“ƒg‚ğŸƒ‹[ƒv—p‚ÉƒŠƒZƒbƒg‚·‚é‚È‚ç
+                // ãƒ•ãƒ¬ãƒ¼ãƒ ã‚¤ãƒ™ãƒ³ãƒˆã‚’æ¬¡ãƒ«ãƒ¼ãƒ—ç”¨ã«ãƒªã‚»ãƒƒãƒˆã™ã‚‹ãªã‚‰
                 st->fsch.next = 0;
                 for (int j = 0; j < st->fsch.count; j++) st->fsch.ev[j].fired = false;
 
@@ -331,10 +359,10 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
             }
         }
 
-        // -------- ”ibeatAbsj‚ği‚ß‚éi1ƒtƒŒ[ƒ€=1ƒI[ƒfƒBƒIƒtƒŒ[ƒ€j
+        // -------- æ‹ï¼ˆbeatAbsï¼‰ã‚’é€²ã‚ã‚‹ï¼ˆ1ãƒ•ãƒ¬ãƒ¼ãƒ =1ã‚ªãƒ¼ãƒ‡ã‚£ã‚ªãƒ•ãƒ¬ãƒ¼ãƒ ï¼‰
         st->beatAbs += st->beatInc;
 
-        // -------- ƒŒ[ƒ“‹«ŠEŒŸo ¨ ƒCƒxƒ“ƒg push & ƒNƒŠƒbƒN”­‰Î
+        // -------- ãƒ¬ãƒ¼ãƒ³å¢ƒç•Œæ¤œå‡º â†’ ã‚¤ãƒ™ãƒ³ãƒˆ push & ã‚¯ãƒªãƒƒã‚¯ç™ºç«
         for (int li = 0; li < TICK_MAX; li++) {
             TickLane* ln = &st->lanes[li];
             if (!ln->enabled) continue;
@@ -342,7 +370,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
             while (st->beatAbs >= ln->nextBeat) {
                 evq_push(&st->evq, (AppEvent) { .kind = EV_TICK, .id = (TickId)li });
 
-                // ƒNƒŠƒbƒN‚ğ–Â‚ç‚·‚Ì‚Íu”vƒŒ[ƒ“‚¾‚¯i‚±‚±‚ª—Bˆê‚Ì”­‰Î“_j
+                // ã‚¯ãƒªãƒƒã‚¯ã‚’é³´ã‚‰ã™ã®ã¯ã€Œæ‹ã€ãƒ¬ãƒ¼ãƒ³ã ã‘ï¼ˆã“ã“ãŒå”¯ä¸€ã®ç™ºç«ç‚¹ï¼‰
                 if (li == TICK_BEAT && st->metroEnable) {
                     st->clickActive = true;
                     st->clickPos = 0;
@@ -352,9 +380,9 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
             }
         }
 
-        // -------- w’èƒtƒŒ[ƒ€ƒCƒxƒ“ƒgišmusicPos‚ğo‚·g’¼‘Oh‚É”»’èj
+        // -------- æŒ‡å®šãƒ•ãƒ¬ãƒ¼ãƒ ã‚¤ãƒ™ãƒ³ãƒˆï¼ˆâ˜…musicPosã‚’å‡ºã™â€œç›´å‰â€ã«åˆ¤å®šï¼‰
         if (musicOk && st->musicPos < st->musicFrames) {
-            int cur = st->musicPos; // ¡‚Ü‚³‚Éo‚·ƒtƒŒ[ƒ€
+            int cur = st->musicPos; // ä»Šã¾ã•ã«å‡ºã™ãƒ•ãƒ¬ãƒ¼ãƒ 
 
             FrameScheduler* fs = &st->fsch;
             while (fs->next < fs->count) {
@@ -372,7 +400,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
             }
         }
 
-        // -------- ƒ~ƒbƒNƒX
+        // -------- ãƒŸãƒƒã‚¯ã‚¹
         for (int c = 0; c < ch; c++) {
             float v = 0.0f;
 
@@ -384,7 +412,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
                 v += st->click[st->clickPos * ch + c] * st->clickGain;
             }
 
-            // ifx“™‚ª‚ ‚é‚È‚ç‚±‚±‚Å‰ÁZj
+            // ï¼ˆfxç­‰ãŒã‚ã‚‹ãªã‚‰ã“ã“ã§åŠ ç®—ï¼‰
 
             if (v > 1.0f) v = 1.0f;
             if (v < -1.0f) v = -1.0f;
@@ -392,7 +420,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
             out[i * ch + c] = v;
         }
 
-        // -------- ˆÊ’uXV
+        // -------- ä½ç½®æ›´æ–°
         if (musicOk && st->musicPos < st->musicFrames) {
             st->musicPos++;
         }
@@ -404,12 +432,6 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
     }
 }
 
-static void on_note_A(AppState* st, uint8_t note, uint8_t vel, bool on) {
-    printf("on_note_A");
-}
-static void on_note_B(AppState* st, uint8_t note, uint8_t vel, bool on) {
-    printf("on_note_B");
-}
 bool musicEventInit() {
 
 
@@ -424,7 +446,7 @@ bool musicEventInit() {
     want.freq = 44100;
     want.format = AUDIO_F32SYS;
     want.channels = 2;
-    want.samples = 256; // ¬‚³‚¢‚Ù‚Ç‘€ì‚ª’Ç]‚µ‚â‚·‚¢(‚½‚¾‚µ•‰‰×‚Í‘‚¦‚é)
+    want.samples = 256; // å°ã•ã„ã»ã©æ“ä½œãŒè¿½å¾“ã—ã‚„ã™ã„(ãŸã ã—è² è·ã¯å¢—ãˆã‚‹)
     want.callback = audio_cb;
     want.userdata = &st;
 
@@ -435,7 +457,7 @@ bool musicEventInit() {
     }
 
     const char* musicPath = "sound/ss.wav";
-    // ƒfƒoƒCƒXƒtƒH[ƒ}ƒbƒg‚É‡‚í‚¹‚Ä“Ç‚İ‚İ
+    // ãƒ‡ãƒã‚¤ã‚¹ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆã«åˆã‚ã›ã¦èª­ã¿è¾¼ã¿
     if (!load_wav_as_f32(musicPath, &st.spec, &st.music, &st.musicFrames)) {
         SDL_Log("Failed to load music wav: %s", musicPath);
         SDL_CloseAudioDevice(st.dev);
@@ -449,7 +471,7 @@ bool musicEventInit() {
         return false;
     }
 
-    // SDL_OpenAudioDeviceŒãist.spec.freq‚ªŠm’è‚µ‚Ä‚©‚çj
+    // SDL_OpenAudioDeviceå¾Œï¼ˆst.spec.freqãŒç¢ºå®šã—ã¦ã‹ã‚‰ï¼‰
     if (!load_midi_build_events("sound/ss.mid", st.spec.freq, &st.song)) {
         SDL_Log("MIDI load failed");
     }
@@ -458,16 +480,16 @@ bool musicEventInit() {
 
     }
 
-    // ‰ŠúBPM”½‰f
+    // åˆæœŸBPMåæ˜ 
     st.samplesPerBeat = (double)st.spec.freq * 60.0 / st.bpm;
     st.offsetFrames = 400.0 / 1000.0 * (double)st.spec.freq;
 
     st.beatAbs = st.offsetFrames / st.samplesPerBeat;
 
-    // 1ƒtƒŒ[ƒ€‚ ‚½‚è‚Ì”‘•ª
+    // 1ãƒ•ãƒ¬ãƒ¼ãƒ ã‚ãŸã‚Šã®æ‹å¢—åˆ†
     st.beatInc = 1.0 / st.samplesPerBeat;
 
-    // ƒŒ[ƒ“’è‹`
+    // ãƒ¬ãƒ¼ãƒ³å®šç¾©
     st.lanes[TICK_BEAT] = (TickLane){ .enabled = true,  .stepBeat = 1.0 };
     st.lanes[TICK_HALF] = (TickLane){ .enabled = false, .stepBeat = 0.5 };
     st.lanes[TICK_QUARTER] = (TickLane){ .enabled = false, .stepBeat = 0.25 };
@@ -483,37 +505,46 @@ bool musicEventInit() {
     st.fsch.count = 0;
     st.fsch.next = 0;
 
-    // —áF“Á’èƒtƒŒ[ƒ€‚ÅÀsi‚ ‚Æ‚ÅD‚«‚É’Ç‰Áj
-    st.fsch.ev[st.fsch.count++] = (FrameEvent){ .frame = 44100 * 10, .id = 0, .enabled = true, .fired = false }; // 10•b
-    st.fsch.ev[st.fsch.count++] = (FrameEvent){ .frame = 44100 * 20, .id = 1, .enabled = true, .fired = false }; // 20•b
+    // ä¾‹ï¼šç‰¹å®šãƒ•ãƒ¬ãƒ¼ãƒ ã§å®Ÿè¡Œï¼ˆã‚ã¨ã§å¥½ãã«è¿½åŠ ï¼‰
+    st.fsch.ev[st.fsch.count++] = (FrameEvent){ .frame = 44100 * 10, .id = 0, .enabled = true, .fired = false }; // 10ç§’
+    st.fsch.ev[st.fsch.count++] = (FrameEvent){ .frame = 44100 * 20, .id = 1, .enabled = true, .fired = false }; // 20ç§’
 
-    // ¦ frame¸‡‚É•À‚×‚Ä‚¨‚­iè‚Å•À‚×‚é/‹N“®‚Ésortj
+    // â€» frameæ˜‡é †ã«ä¸¦ã¹ã¦ãŠãï¼ˆæ‰‹ã§ä¸¦ã¹ã‚‹/èµ·å‹•æ™‚ã«sortï¼‰
 
     SDL_PauseAudioDevice(st.dev, 0);
 
     for (int i = 0; i < 128; i++) {
-        st.noteMap[i] = NULL;
+        st.midiTrackMap[i] = NULL;
+        st.midiTrackEnabled[i] = true;
         st.lastFiredSample[i] = -1;
     }
+    for (int i = 0; i < TICK_MAX; i++) st.tickHandlers[i] = NULL;
+    for (int i = 0; i < FRAME_EV_MAX; i++) st.frameHandlers[i] = NULL;
 
-    // ˜A‘Å—}§ 30msiD‚İ‚Å20`50msj
+    st.tickHandlers[TICK_BEAT] = on_tick_beat;
+    st.tickHandlers[TICK_HALF] = on_tick_half;
+    st.tickHandlers[TICK_QUARTER] = on_tick_quarter;
+    st.tickHandlers[TICK_TRIPLET] = on_tick_triplet;
+    st.tickHandlers[TICK_BACKBEAT_2_4] = on_tick_half;
+    st.frameHandlers[0] = on_frame_event_0;
+    st.frameHandlers[1] = on_frame_event_1;
+
+    // é€£æ‰“æŠ‘åˆ¶ 30msï¼ˆå¥½ã¿ã§20ï½50msï¼‰
     st.debounceSamples = (int64_t)((double)st.spec.freq * 30.0 / 1000.0 + 0.5);
 
-    // —áFƒm[ƒg60/62‚Éˆ—‚ğŠ„‚è“–‚Ä
-    st.noteMap[60] = on_note_A; // ‚±‚±‚ÉŠÖ”‚ğ“ü‚ê‚é
-    st.noteMap[62] = on_note_B;
+    return true;
 }
 
 static void on_tick_beat(AppState* st) { system("cls"); printf("B\n"); }
 static void on_tick_half(AppState* st) { system("cls"); printf("H %d\n", rand()); }
 static void on_tick_quarter(AppState* st) { system("cls"); printf("-\n"); }
-static void on_tick_triplet(AppState* st) { /* ‚±‚±‚É”CˆÓˆ— */ }
-static void on_frame_event_0(AppState* st) { /* ”CˆÓˆ— */ }
-static void on_frame_event_1(AppState* st) { /* ”CˆÓˆ— */ }
+static void on_tick_triplet(AppState* st) { /* ã“ã“ã«ä»»æ„å‡¦ç† */ }
+static void on_frame_event_0(AppState* st, int musicFrame) { (void)st; (void)musicFrame; /* ä»»æ„å‡¦ç† */ }
+static void on_frame_event_1(AppState* st, int musicFrame) { (void)st; (void)musicFrame; /* ä»»æ„å‡¦ç† */ }
 
 void musicEventUpdate() {
 
-    // •ÏX—Ê
+    // å¤‰æ›´é‡
     SDL_Keymod mod = SDL_GetModState();
     double bpmStep = 0.001;
     if (mod & KMOD_ALT) bpmStep = 1;
@@ -521,7 +552,7 @@ void musicEventUpdate() {
     if (mod & KMOD_RSHIFT) bpmStep = 0.01;
     if (mod & KMOD_CTRL)  bpmStep = 0.0001;
 
-    // ˆÊ‘ŠƒYƒŒ—Êims’PˆÊ‚Åw’è¨frames‚É•ÏŠ·j
+    // ä½ç›¸ã‚ºãƒ¬é‡ï¼ˆmså˜ä½ã§æŒ‡å®šâ†’framesã«å¤‰æ›ï¼‰
     double msStep = 1.0;
     if (mod & KMOD_ALT) msStep = 1000.0;
     if (mod & KMOD_LSHIFT) msStep = 100.0;
@@ -537,11 +568,11 @@ void musicEventUpdate() {
         set_bpm_locked(&st, st.bpm - bpmStep);
     }
     else if (getKeyDown(SDL_SCANCODE_LEFT)) {
-        // ¶ƒNƒŠƒbƒN‚ğu‘‚ß‚év(ˆÊ‘Š‚ğ–ß‚·)
+        // å·¦ï¼ã‚¯ãƒªãƒƒã‚¯ã‚’ã€Œæ—©ã‚ã‚‹ã€(ä½ç›¸ã‚’æˆ»ã™)
         shift_phase_ms_locked(&st, -msStep);
     }
     else if (getKeyDown(SDL_SCANCODE_RIGHT)) {
-        // ‰EƒNƒŠƒbƒN‚ğu’x‚ç‚¹‚év
+        // å³ï¼ã‚¯ãƒªãƒƒã‚¯ã‚’ã€Œé…ã‚‰ã›ã‚‹ã€
         shift_phase_ms_locked(&st, +msStep);
     }
     else if (getKeyDown(SDL_SCANCODE_SPACE)) {
@@ -556,7 +587,7 @@ void musicEventUpdate() {
         isRunning = false;
     }*/
     SDL_UnlockAudioDevice(st.dev);
-    // ƒ^ƒCƒgƒ‹XVi10Hz’ö“xj
+    // ã‚¿ã‚¤ãƒˆãƒ«æ›´æ–°ï¼ˆ10Hzç¨‹åº¦ï¼‰
     Uint32 now = SDL_GetTicks();
     if (now - lastTitle > 100) {
         lastTitle = now;
@@ -583,22 +614,130 @@ void musicEventUpdate() {
         }
 
         if (ev.kind == EV_FRAME) {
-            switch (ev.id) {
-            case 0: on_frame_event_0(&st); break;
-            case 1: on_frame_event_1(&st); break;
+            if (ev.id >= 0 && ev.id < FRAME_EV_MAX) {
+                FrameHandler handler = st.frameHandlers[ev.id];
+                if (handler) handler(&st, ev.musicFrame);
             }
             continue;
         }
 
-        // ‚»‚êˆÈŠO‚ÍTick
-        switch (ev.id) {
-        case TICK_BEAT:              on_tick_beat(&st); break;
-        case TICK_BACKBEAT_2_4:      on_tick_half(&st); break;
-        case TICK_QUARTER:           on_tick_quarter(&st); break;
-        case TICK_TRIPLET:           on_tick_triplet(&st); break;
-        default: break;
+        // ãã‚Œä»¥å¤–ã¯Tick
+        if (ev.id >= 0 && ev.id < TICK_MAX) {
+            TickHandler handler = st.tickHandlers[ev.id];
+            if (handler) handler(&st);
         }
     }
+}
+
+bool musicEventRegisterTickHandler(TickId id, TickHandler handler) {
+    if (id < 0 || id >= TICK_MAX) return false;
+    lock_audio_if_ready();
+    st.tickHandlers[id] = handler;
+    unlock_audio_if_ready();
+    return true;
+}
+
+void musicEventUnregisterTickHandler(TickId id) {
+    if (id < 0 || id >= TICK_MAX) return;
+    lock_audio_if_ready();
+    st.tickHandlers[id] = NULL;
+    unlock_audio_if_ready();
+}
+
+void musicEventSetTickEnabled(TickId id, bool enabled) {
+    if (id < 0 || id >= TICK_MAX) return;
+    lock_audio_if_ready();
+    st.lanes[id].enabled = enabled;
+    if (enabled) {
+        rebase_lanes(&st);
+    }
+    unlock_audio_if_ready();
+}
+
+bool musicEventRegisterFrameHandler(int id, FrameHandler handler) {
+    if (id < 0 || id >= FRAME_EV_MAX) return false;
+    lock_audio_if_ready();
+    st.frameHandlers[id] = handler;
+    unlock_audio_if_ready();
+    return true;
+}
+
+void musicEventUnregisterFrameHandler(int id) {
+    if (id < 0 || id >= FRAME_EV_MAX) return;
+    lock_audio_if_ready();
+    st.frameHandlers[id] = NULL;
+    unlock_audio_if_ready();
+}
+
+void musicEventSetFrameEventEnabled(int id, bool enabled) {
+    lock_audio_if_ready();
+    int idx = frame_event_index_by_id(&st.fsch, id);
+    if (idx >= 0) {
+        st.fsch.ev[idx].enabled = enabled;
+        st.fsch.next = 0;
+    }
+    unlock_audio_if_ready();
+}
+
+bool musicEventAddFrameEvent(int id, int frame, bool enabled) {
+    if (id < 0 || id >= FRAME_EV_MAX) return false;
+    lock_audio_if_ready();
+    int idx = frame_event_index_by_id(&st.fsch, id);
+    if (idx >= 0) {
+        st.fsch.ev[idx].frame = frame;
+        st.fsch.ev[idx].enabled = enabled;
+        st.fsch.ev[idx].fired = false;
+    }
+    else {
+        if (st.fsch.count >= FRAME_EV_MAX) {
+            unlock_audio_if_ready();
+            return false;
+        }
+        st.fsch.ev[st.fsch.count++] = (FrameEvent){ .frame = frame, .id = id, .enabled = enabled, .fired = false };
+    }
+    qsort(st.fsch.ev, (size_t)st.fsch.count, sizeof(FrameEvent), cmp_frame_event_by_frame);
+    st.fsch.next = 0;
+    unlock_audio_if_ready();
+    return true;
+}
+
+bool musicEventRemoveFrameEvent(int id) {
+    lock_audio_if_ready();
+    int idx = frame_event_index_by_id(&st.fsch, id);
+    if (idx < 0) {
+        unlock_audio_if_ready();
+        return false;
+    }
+    for (int i = idx; i + 1 < st.fsch.count; i++) {
+        st.fsch.ev[i] = st.fsch.ev[i + 1];
+    }
+    st.fsch.count--;
+    st.fsch.next = 0;
+    unlock_audio_if_ready();
+    return true;
+}
+
+bool musicEventRegisterMidiTrackHandler(uint8_t track, MidiTrackHandler handler) {
+    if (track >= 128) return false;
+    if (st.song.trackCount > 0 && track >= (uint8_t)st.song.trackCount) return false;
+    lock_audio_if_ready();
+    st.midiTrackMap[track] = handler;
+    unlock_audio_if_ready();
+    return true;
+}
+
+void musicEventUnregisterMidiTrackHandler(uint8_t track) {
+    if (track >= 128) return;
+    lock_audio_if_ready();
+    st.midiTrackMap[track] = NULL;
+    unlock_audio_if_ready();
+}
+
+void musicEventSetMidiTrackEnabled(uint8_t track, bool enabled) {
+    if (track >= 128) return;
+    lock_audio_if_ready();
+    st.midiTrackEnabled[track] = enabled;
+    unlock_audio_if_ready();
 }
 
 char* getInfo() {

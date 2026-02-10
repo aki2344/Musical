@@ -17,24 +17,25 @@ typedef enum {
 typedef struct {
     bool enabled;
     double stepBeat;   // 1.0 / 0.5 / 0.25 / 1/3 ...
-    double phaseBeat;  // —á: 0.0(•\), 0.5(— ), 1/3 ...
-    double nextBeat;   // Ÿ‚É”­‰Î‚·‚é”ˆÊ’uibeatAbsŠî€j
+    double phaseBeat;  // ä¾‹: 0.0(è¡¨), 0.5(è£), 1/3 ...
+    double nextBeat;   // æ¬¡ã«ç™ºç«ã™ã‚‹æ‹ä½ç½®ï¼ˆbeatAbsåŸºæº–ï¼‰
 } TickLane;
 
 
-#define EVQ_CAP 2048  // \•ªiƒCƒxƒ“ƒg•p“x‚Í’á‚¢j
+#define EVQ_CAP 2048  // ååˆ†ï¼ˆã‚¤ãƒ™ãƒ³ãƒˆé »åº¦ã¯ä½ã„ï¼‰
 
 typedef enum { EV_TICK, EV_FRAME, EV_MIDI_NOTE } EvKind;
 
 typedef struct {
     EvKind kind;
     int id;         // tickId or frameEventId
-    int musicFrame; // ƒfƒoƒbƒO—p    
-    // šMIDI—p
+    int musicFrame; // ãƒ‡ãƒãƒƒã‚°ç”¨    
+    // â˜…MIDIç”¨
+    uint8_t track;  // MIDI track index
     uint8_t on;     // 1=NoteOn, 0=NoteOff
     uint8_t note;   // 0..127
     uint8_t vel;    // 0..127
-    int64_t sample; // i”CˆÓjƒCƒxƒ“ƒg‚ÌsampleˆÊ’u
+    int64_t sample; // ï¼ˆä»»æ„ï¼‰ã‚¤ãƒ™ãƒ³ãƒˆã®sampleä½ç½®
 } AppEvent;
 typedef struct {
     SDL_SpinLock lock;
@@ -42,26 +43,28 @@ typedef struct {
     AppEvent buf[EVQ_CAP];
 } EventQueue;
 typedef struct {
-    int frame;       // ”­‰Î‚µ‚½‚¢ musicPosiƒI[ƒfƒBƒIƒtƒŒ[ƒ€j
-    int id;          // ‚Ç‚ÌŠÖ”‚ğŒÄ‚Ô‚©
+    int frame;       // ç™ºç«ã—ãŸã„ musicPosï¼ˆã‚ªãƒ¼ãƒ‡ã‚£ã‚ªãƒ•ãƒ¬ãƒ¼ãƒ ï¼‰
+    int id;          // ã©ã®é–¢æ•°ã‚’å‘¼ã¶ã‹
     bool enabled;
-    bool fired;      // 1‰ñ‚¾‚¯”­‰Î‚µ‚½‚¢ê‡
+    bool fired;      // 1å›ã ã‘ç™ºç«ã—ãŸã„å ´åˆ
 } FrameEvent;
 
 #define FRAME_EV_MAX 128
 typedef struct {
     FrameEvent ev[FRAME_EV_MAX];
     int count;
-    int next;        // Ÿ‚ÉŒ©‚éƒCƒxƒ“ƒgiframe¸‡‚É‚µ‚Ä‚¨‚­j
+    int next;        // æ¬¡ã«è¦‹ã‚‹ã‚¤ãƒ™ãƒ³ãƒˆï¼ˆframeæ˜‡é †ã«ã—ã¦ãŠãï¼‰
 } FrameScheduler;
 
 struct AppState;
-// AppState‚É’Ç‰Á
-typedef void (*NoteHandler)(struct AppState* st, uint8_t note, uint8_t vel, bool on);
+// AppStateã«è¿½åŠ 
+typedef void (*MidiTrackHandler)(struct AppState* st, uint8_t track, uint8_t note, uint8_t vel, bool on);
+typedef void (*TickHandler)(struct AppState* st);
+typedef void (*FrameHandler)(struct AppState* st, int musicFrame);
 
 typedef struct AppState {
     SDL_AudioDeviceID dev;
-    SDL_AudioSpec spec;      // ÀƒfƒoƒCƒXƒtƒH[ƒ}ƒbƒg
+    SDL_AudioSpec spec;      // å®Ÿãƒ‡ãƒã‚¤ã‚¹ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆ
 
     float* music;            // interleaved float32
     int64_t  musicFrames;         // frames (not samples)
@@ -76,22 +79,27 @@ typedef struct AppState {
 
     double bpm;
     double samplesPerBeat;   // frames per beat (double)
-    double offsetFrames;     // —İÏ•\¦—piˆÊ‘ŠƒIƒtƒZƒbƒg‚Ì‡Œv‚ğ•Ûj
+    double offsetFrames;     // ç´¯ç©è¡¨ç¤ºç”¨ï¼ˆä½ç›¸ã‚ªãƒ•ã‚»ãƒƒãƒˆã®åˆè¨ˆã‚’ä¿æŒï¼‰
 
     float musicGain;
     float clickGain;
 
-    double beatAbs;      // Œo‰ß””i˜A‘±j
-    double beatInc;      // 1ƒtƒŒ[ƒ€‚ ‚½‚è‚Ì”‘•ª = 1/samplesPerBeat
+    double beatAbs;      // çµŒéæ‹æ•°ï¼ˆé€£ç¶šï¼‰
+    double beatInc;      // 1ãƒ•ãƒ¬ãƒ¼ãƒ ã‚ãŸã‚Šã®æ‹å¢—åˆ† = 1/samplesPerBeat
     TickLane lanes[TICK_MAX];
 
     EventQueue evq;
     FrameScheduler fsch;
 
-    // ƒm[ƒg¨ŠÖ”
-    NoteHandler noteMap[128];
+    // MIDI track â†’ function
+    MidiTrackHandler midiTrackMap[128];
+    bool midiTrackEnabled[128];
 
-    // ˜A‘Å—}§iƒƒCƒ“ƒXƒŒƒbƒh‘¤‚Åg‚¤‘z’è‚Å‚àOK‚¾‚ªA‚±‚±‚É’u‚­‚ÆŠyj
+    // Tick/frame handlers
+    TickHandler tickHandlers[TICK_MAX];
+    FrameHandler frameHandlers[FRAME_EV_MAX];
+
+    // é€£æ‰“æŠ‘åˆ¶ï¼ˆãƒ¡ã‚¤ãƒ³ã‚¹ãƒ¬ãƒƒãƒ‰å´ã§ä½¿ã†æƒ³å®šã§ã‚‚OKã ãŒã€ã“ã“ã«ç½®ãã¨æ¥½ï¼‰
     int64_t debounceSamples;
     int64_t lastFiredSample[128];
 
@@ -104,3 +112,17 @@ bool musicEventInit();
 void musicEventUpdate();
 char* getInfo();
 void musicEventQuit();
+
+bool musicEventRegisterTickHandler(TickId id, TickHandler handler);
+void musicEventUnregisterTickHandler(TickId id);
+void musicEventSetTickEnabled(TickId id, bool enabled);
+
+bool musicEventRegisterFrameHandler(int id, FrameHandler handler);
+void musicEventUnregisterFrameHandler(int id);
+void musicEventSetFrameEventEnabled(int id, bool enabled);
+bool musicEventAddFrameEvent(int id, int frame, bool enabled);
+bool musicEventRemoveFrameEvent(int id);
+
+bool musicEventRegisterMidiTrackHandler(uint8_t track, MidiTrackHandler handler);
+void musicEventUnregisterMidiTrackHandler(uint8_t track);
+void musicEventSetMidiTrackEnabled(uint8_t track, bool enabled);

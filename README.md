@@ -324,3 +324,119 @@ The startup shell script only changes the project name.
    * `musicEventUpdate` がイベントを処理。  
 3. **終了処理**: `musicEventQuit`  
    * MIDIメモリを解放。  
+
+---
+
+## 6. `musicEvent.c` Handler（Tick / Frame / MidiTrack）追加・削除手順
+
+ここでは、実際にプログラマーがどの順番で設定すれば安全に動かせるかを、`musicEvent.h` の公開APIベースで説明します。
+
+> 重要: `musicEvent.c` 側の登録/削除関数は内部で `SDL_LockAudioDevice` を使用し、オーディオコールバックとの競合を避ける設計です。`st` を直接編集せず、公開関数を経由して設定してください。
+
+### 6.1 Tick Handler（拍イベント）
+
+#### 役割
+* `TickId` ごと（`TICK_BEAT` など）に、拍イベント発火時の処理を差し替えます。
+
+#### 追加（登録）手順
+1. `TickHandler` シグネチャ（`void (*)(AppState* st)`）の関数を作成する。
+2. `musicEventRegisterTickHandler(id, handler)` を呼ぶ。
+3. 必要なら `musicEventSetTickEnabled(id, true)` で lane を有効化する。
+
+```c
+static void onMyBeat(struct AppState* st) {
+    (void)st;
+    // 任意処理
+}
+
+musicEventRegisterTickHandler(TICK_BEAT, onMyBeat);
+musicEventSetTickEnabled(TICK_BEAT, true);
+```
+
+#### 削除（解除）手順
+* `musicEventUnregisterTickHandler(id)` を呼ぶ。
+* 必要なら `musicEventSetTickEnabled(id, false)` も呼び、イベント生成自体を止める。
+
+#### 注意点
+* `id` が範囲外（`id < 0 || id >= TICK_MAX`）だと登録失敗または無視されます。
+* Handlerを解除しても lane が有効のままだと、イベント生成自体は継続します（呼び先が `NULL` になるだけ）。
+
+---
+
+### 6.2 Frame Handler（特定フレーム到達イベント）
+
+Frame 系は「いつ発火するか（FrameEvent）」と「発火時に何をするか（FrameHandler）」を分けて設定します。
+
+#### 追加（登録）手順
+1. `FrameHandler` 関数（`void (*)(AppState* st, int musicFrame)`）を作る。
+2. `musicEventRegisterFrameHandler(id, handler)` で処理を登録する。
+3. `musicEventAddFrameEvent(id, frame, enabled)` で発火タイミングを登録する。
+
+```c
+static void onBossWarning(struct AppState* st, int musicFrame) {
+    (void)st;
+    (void)musicFrame;
+    // 任意処理
+}
+
+musicEventRegisterFrameHandler(10, onBossWarning);
+musicEventAddFrameEvent(10, 44100 * 30, true); // 30秒地点
+```
+
+#### 更新・無効化・削除
+* 同じ `id` に `musicEventAddFrameEvent` を再実行すると、既存イベントを更新できます。
+* 一時停止したいだけなら `musicEventSetFrameEventEnabled(id, false)`。
+* イベント定義自体を削除するなら `musicEventRemoveFrameEvent(id)`。
+* 処理関数側も消すなら `musicEventUnregisterFrameHandler(id)`。
+
+#### 注意点
+* `id` は `0 <= id < FRAME_EV_MAX` が必須です。
+* `musicEventRemoveFrameEvent(id)` は対象が無いと `false` を返します。
+* FrameEventを削除しても、FrameHandlerの関数ポインタは残るため、不要なら明示的に unregister してください。
+
+---
+
+### 6.3 MidiTrack Handler（MIDIトラック単位）
+
+#### 役割
+* MIDIイベントを「ノート番号」ではなく「トラック番号」単位で処理します。
+
+#### 追加（登録）手順
+1. `MidiTrackHandler` 関数（`void (*)(AppState* st, uint8_t track, uint8_t note, uint8_t vel, bool on)`）を作る。
+2. `musicEventRegisterMidiTrackHandler(track, handler)` を呼ぶ。
+3. 必要なら `musicEventSetMidiTrackEnabled(track, true)` を呼ぶ（通常は初期状態で true）。
+
+```c
+static void onTrack0(struct AppState* st, uint8_t track, uint8_t note, uint8_t vel, bool on) {
+    (void)st;
+    (void)track;
+    (void)note;
+    (void)vel;
+    (void)on;
+    // 任意処理
+}
+
+musicEventRegisterMidiTrackHandler(0, onTrack0);
+musicEventSetMidiTrackEnabled(0, true);
+```
+
+#### 削除（解除）手順
+* `musicEventUnregisterMidiTrackHandler(track)` で関数解除。
+* 必要なら `musicEventSetMidiTrackEnabled(track, false)` で対象トラックのディスパッチを停止する。
+
+#### 注意点
+* `track >= 128` は無効です。
+* `st.song.trackCount > 0` のときは `track >= st.song.trackCount` でも登録失敗になります。
+* `enabled=false` だとコールバックに届く前に破棄されるため、負荷を下げたい時は unregister だけでなく disable も有効です。
+
+---
+
+### 6.4 推奨セットアップ順（実運用）
+
+1. `musicEventInit()` を実行して、音声/MIDI/内部状態を初期化する。
+2. Tick / Frame / MidiTrack の各Handlerを register する。
+3. FrameEvent（発火フレーム）を add する。
+4. 必要な lane / frame event / track を enable する。
+5. メインループ内で `musicEventUpdate()` を継続実行する。
+
+この順序にしておくと、「処理関数未登録のままイベントだけ先に発火する」状態を避けやすくなります。

@@ -63,6 +63,11 @@ static float scale;
 
 static float r;
 
+static void handle_midi_test(AppState* st, uint8_t track, uint8_t note, uint8_t vel, bool on) {
+    (void)st;
+    printf("[MIDI] track=%u note=%u vel=%u on=%d\n", track, note, vel, on);
+}
+
 static void end() {
     isRunning = false;
     setSequence(TITLE);
@@ -102,6 +107,8 @@ static void init() {
     setOnFinished(start);
 
     musicEventInit();
+    musicEventRegisterMidiTrackHandler(0, handle_midi_test);
+    musicEventSetMidiTrackEnabled(0, true);
 
     nowSequence = START;
 

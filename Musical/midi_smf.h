@@ -9,6 +9,7 @@
 typedef struct {
     int32_t tick;     // absolute tick from song start
     int64_t sample;   // absolute sample(frame) from song start
+    uint8_t track;    // track index
     uint8_t on;       // 1=NoteOn, 0=NoteOff
     uint8_t note;     // 0..127
     uint8_t vel;      // 0..127 (NoteOff is 0)
@@ -25,6 +26,8 @@ typedef struct {
     int tpqn;
     int32_t lengthTicks;
     int64_t lengthSamples;
+
+    int trackCount;
 
     MidiTempoSeg* seg; int segCount;
 

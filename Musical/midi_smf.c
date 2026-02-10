@@ -55,7 +55,7 @@ static bool read_vlq(Cur* c, uint32_t* out) {
 }
 
 
-static bool push_note(NoteVec* v, int32_t tick, uint8_t on, uint8_t note, uint8_t vel) {
+static bool push_note(NoteVec* v, int32_t tick, uint8_t track, uint8_t on, uint8_t note, uint8_t vel) {
     if (v->n >= v->cap) {
         int nc = v->cap ? v->cap * 2 : 1024;
         void* p = realloc(v->a, (size_t)nc * sizeof(MidiNoteEvent));
@@ -63,7 +63,7 @@ static bool push_note(NoteVec* v, int32_t tick, uint8_t on, uint8_t note, uint8_
         v->a = (MidiNoteEvent*)p;
         v->cap = nc;
     }
-    v->a[v->n++] = (MidiNoteEvent){ tick, 0, on, note, vel };
+    v->a[v->n++] = (MidiNoteEvent){ tick, 0, track, on, note, vel };
     return true;
 }
 static bool push_tempo(TempoVec* v, int32_t tick, int32_t tempo) {
@@ -104,7 +104,7 @@ static int cmp_tempo_by_tick(const void* a, const void* b) {
 }
 
 // ---------------- track parser ----------------
-static bool parse_track(Cur* c, NoteVec* notes, TempoVec* tempos, int32_t* outEndTick) {
+static bool parse_track(Cur* c, NoteVec* notes, TempoVec* tempos, int32_t* outEndTick, uint8_t track) {
     if (!need(c, 8)) return false;
     if (memcmp(c->p, "MTrk", 4) != 0) return false;
     uint32_t len = rd_u32be(c->p + 4);
@@ -173,14 +173,14 @@ static bool parse_track(Cur* c, NoteVec* notes, TempoVec* tempos, int32_t* outEn
 
             if (hi == 0x90) {
                 if (d2 == 0) {
-                    if (!push_note(notes, absTick, 0, d1, 0)) return false;
+                    if (!push_note(notes, absTick, track, 0, d1, 0)) return false;
                 }
                 else {
-                    if (!push_note(notes, absTick, 1, d1, d2)) return false;
+                    if (!push_note(notes, absTick, track, 1, d1, d2)) return false;
                 }
             }
             else if (hi == 0x80) {
-                if (!push_note(notes, absTick, 0, d1, 0)) return false;
+                if (!push_note(notes, absTick, track, 0, d1, 0)) return false;
             }
         }
         else if (hi == 0xC0 || hi == 0xD0) {
@@ -400,7 +400,7 @@ bool load_midi_build_events(const char* path, int sampleRate, MidiSong* outSong)
     int32_t endTickMax = 0;
     for (int i = 0; i < (int)ntr; i++) {
         int32_t endTick = 0;
-        if (!parse_track(&c, &notes, &tempos, &endTick)) {
+        if (!parse_track(&c, &notes, &tempos, &endTick, (uint8_t)i)) {
             fprintf(stderr, "parse track fail: %d\n", i);
             free(notes.a); free(tempos.a); free(buf);
             return false;
@@ -408,6 +408,7 @@ bool load_midi_build_events(const char* path, int sampleRate, MidiSong* outSong)
         if (endTick > endTickMax) endTickMax = endTick;
     }
     song.lengthTicks = endTickMax;
+    song.trackCount = (int)ntr;
 
     if (!build_tempo_segments(&song, &tempos, sampleRate)) {
         free(notes.a); free(tempos.a); free(buf);

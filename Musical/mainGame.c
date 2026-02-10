@@ -107,8 +107,10 @@ static void init() {
     setOnFinished(start);
 
     musicEventInit();
-    musicEventRegisterMidiTrackHandler(0, handle_midi_test);
-    musicEventSetMidiTrackEnabled(0, true);
+    // Track 0 はコンダクタートラック（テンポ/拍子）になりやすく、
+    // Noteイベントは Track 1 以降に入るケースが多い。
+    musicEventRegisterMidiTrackHandler(1, handle_midi_test);
+    musicEventSetMidiTrackEnabled(1, true);
 
     nowSequence = START;
 

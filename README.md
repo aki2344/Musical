@@ -214,6 +214,126 @@ The startup shell script only changes the project name.
 #### (7) リソース解放 `free_midi_song`
 * `seg` / `ev` を解放して初期化。  
 
+### 2.3 SMF(Type1) バイナリ構造と `midi_smf.c` の変数対応
+
+ここでは、Standard MIDI File (SMF) Type1 の「実際のバイト列の意味」と、`midi_smf.c` での格納先を対応づけて整理します。
+
+#### (A) ファイル全体レイアウト
+
+SMF(Type1) は、次のチャンク列です。
+
+1. `MThd` ヘッダチャンク（固定で先頭）
+2. `MTrk` トラックチャンク × `ntrks` 個
+
+`midi_smf.c` では、まずファイル全体を `buf` に読み込み、`Cur c = { buf, buf + fsz };` で走査します。ヘッダ読み取り後は `c.p` を進めながら、トラック数ぶん `parse_track` を呼び出します。
+
+#### (B) `MThd` ヘッダチャンク（14バイト以上）
+
+ヘッダの代表的なバイト構造（ビッグエンディアン）:
+
+* `0..3` : `"MThd"`
+* `4..7` : `header length`（通常 6）
+* `8..9` : `format`
+* `10..11`: `ntrks`（トラック数）
+* `12..13`: `division`
+
+`midi_smf.c` 側の対応:
+
+* `uint32_t hlen = rd_u32be(c.p + 4);`
+  * ヘッダ長を取得。`c.p += 8 + hlen;` で次チャンクへ進む。
+* `uint16_t fmt = rd_u16be(c.p + 8);`
+  * SMFフォーマット。`fmt != 1` はエラー（Type1のみ対応）。
+* `uint16_t ntr = rd_u16be(c.p + 10);`
+  * トラック数。`for (i=0; i<ntr; i++) parse_track(...)` で使用。
+* `uint16_t div = rd_u16be(c.p + 12);`
+  * 時間分解能。`div & 0x8000`（SMPTE）を拒否し、`song.tpqn = div & 0x7FFF` を採用。
+
+#### (C) `MTrk` トラックチャンク
+
+各トラックは以下の形です。
+
+* `"MTrk"` (4 byte)
+* `length` (4 byte, BE)
+* `track event stream` (`length` byte)
+
+`parse_track` では:
+
+* `len = rd_u32be(c->p + 4)` でトラックデータ長を取得。
+* `Cur t = { c->p, c->p + len };` を作り、以降は `t` 内でイベントを読む。
+* トラック内の絶対tickは `int32_t absTick` に蓄積。
+
+#### (D) トラックイベントのバイナリ構造
+
+トラックイベントは概ね次の並びです。
+
+1. `delta-time`（VLQ）
+2. `event`（ステータス+データ、またはランニングステータス適用）
+
+`midi_smf.c` では:
+
+* `read_vlq(&t, &delta)` で `delta-time` を取り、`absTick += delta`。
+* 先頭1バイト `b` を読んで、
+  * `b & 0x80 != 0` なら新規ステータスバイト。
+  * それ以外なら `running` をステータスとして使い、`t.p--` で `b` をデータとして再利用。
+* チャネルメッセージ（`0x8n..0xEn`）で `running = status` 更新。
+
+#### (E) 本実装で解釈しているイベントと格納先
+
+1. **Note On (`0x9n`)**
+   * データ: `note(d1), velocity(d2)`
+   * `d2==0` は NoteOff として扱う。
+   * 格納: `push_note(notes, absTick, track, on, d1, d2or0)`
+   * 一時保存先: `NoteVec notes`（`notes.a[notes.n]`）
+
+2. **Note Off (`0x8n`)**
+   * データ: `note(d1), velocity(d2)`（実装では velocity は使用せず 0 扱い）
+   * 格納: `push_note(notes, absTick, track, 0, d1, 0)`
+
+3. **Set Tempo メタイベント (`0xFF 0x51 0x03 tt tt tt`)**
+   * `tt tt tt` = 四分音符あたりマイクロ秒 (`tempoUsPerQN`)
+   * 格納: `push_tempo(tempos, absTick, tempo)`
+   * 一時保存先: `TempoVec tempos`（`tempos.a[tempos.n]`）
+
+4. **End of Track (`0xFF 0x2F 0x00`)**
+   * 検出後にトラック解析ループを `break`。
+
+5. **SysEx (`0xF0`, `0xF7`)**
+   * `read_vlq` で長さを取り、`skip_n` で内容を読み飛ばす。
+
+6. **その他メタイベント**
+   * 長さだけ読んでスキップ（テンポ以外は保持しない）。
+
+#### (F) 一時配列から最終 `MidiSong` への反映
+
+`load_midi_build_events` の後半で、抽出データを `MidiSong song` に確定します。
+
+* `song.trackCount = ntr`
+* `song.lengthTicks = endTickMax`
+* `song.tpqn = div & 0x7FFF`
+* テンポ:
+  * `TempoVec tempos` → `build_tempo_segments` で `song.seg` / `song.segCount`
+  * `fill_seg_startSample` で各セグメント `startSample` を計算
+* ノート:
+  * `NoteVec notes` を `tick` 順ソート
+  * 各要素 `notes.a[i].tick` をテンポセグメントで `notes.a[i].sample` に変換
+  * `sample` 順に再ソート
+  * `song.ev = notes.a`, `song.evCount = notes.n`
+* 最終長:
+  * `song.lengthSamples = midi_tick_to_sample(&song, song.lengthTicks, sampleRate)`
+
+#### (G) 変数対応のクイックリファレンス
+
+* ファイル全体バッファ: `buf`, `fsz`
+* 走査カーソル: `Cur c`（全体）, `Cur t`（各トラック）
+* ヘッダ値: `fmt`, `ntr`, `div`, `hlen`
+* 解析中tick: `absTick`, `delta`
+* ランニングステータス: `running`, `status`
+* 抽出ノート: `NoteVec notes` → `song.ev`
+* 抽出テンポ: `TempoVec tempos` → `song.seg`
+* 曲全体情報: `song.tpqn`, `song.lengthTicks`, `song.lengthSamples`, `song.trackCount`
+
+この対応を押さえると、SMF(Type1) の「バイナリ上の意味」と `midi_smf.c` のメモリ上データ構造の対応を追いやすくなります。
+
 ---
 
 ## 3. 機能解説（musicEvent.c）

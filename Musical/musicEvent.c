@@ -472,7 +472,7 @@ bool musicEventInit() {
     }
 
     // SDL_OpenAudioDevice後（st.spec.freqが確定してから）
-    if (!load_midi_build_events("sound/ss.mid", st.spec.freq, &st.song)) {
+    if (!load_midi_build_events("sound/song.mid", st.spec.freq, &st.song)) {
         SDL_Log("MIDI load failed");
     }
     else {
@@ -490,12 +490,12 @@ bool musicEventInit() {
     st.beatInc = 1.0 / st.samplesPerBeat;
 
     // レーン定義
-    st.lanes[TICK_BEAT] = (TickLane){ .enabled = true,  .stepBeat = 1.0 };
+    st.lanes[TICK_BEAT] = (TickLane){ .enabled = false,  .stepBeat = 1.0 };
     st.lanes[TICK_HALF] = (TickLane){ .enabled = false, .stepBeat = 0.5 };
     st.lanes[TICK_QUARTER] = (TickLane){ .enabled = false, .stepBeat = 0.25 };
     st.lanes[TICK_TRIPLET] = (TickLane){ .enabled = false, .stepBeat = 1.0 / 3.0 };
     st.lanes[TICK_OFFBEAT] = (TickLane){ .enabled = false,.stepBeat = 1.0,.phaseBeat = 0.5 };
-    st.lanes[TICK_BACKBEAT_2_4] = (TickLane){ .enabled = true,.stepBeat = 2.0,.phaseBeat = 1.0 };
+    st.lanes[TICK_BACKBEAT_2_4] = (TickLane){ .enabled = false,.stepBeat = 2.0,.phaseBeat = 1.0 };
     st.lanes[TICK_TRIPLET_OFF] = (TickLane){ .enabled = false,.stepBeat = 1.0,.phaseBeat = 1.0 / 3.0 };
 
 

@@ -432,7 +432,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
     }
 }
 
-bool musicEventInit() {
+bool musicEventInit(const char* musicPath, const char* midiPath) {
 
 
     SDL_zero(st);
@@ -456,7 +456,6 @@ bool musicEventInit() {
         return false;
     }
 
-    const char* musicPath = "sound/ss.wav";
     // デバイスフォーマットに合わせて読み込み
     if (!load_wav_as_f32(musicPath, &st.spec, &st.music, &st.musicFrames)) {
         SDL_Log("Failed to load music wav: %s", musicPath);
@@ -472,7 +471,7 @@ bool musicEventInit() {
     }
 
     // SDL_OpenAudioDevice後（st.spec.freqが確定してから）
-    if (!load_midi_build_events("sound/song.mid", st.spec.freq, &st.song)) {
+    if (!load_midi_build_events(midiPath, st.spec.freq, &st.song)) {
         SDL_Log("MIDI load failed");
     }
     else {
@@ -505,12 +504,6 @@ bool musicEventInit() {
     st.fsch.count = 0;
     st.fsch.next = 0;
 
-    // 例：特定フレームで実行（あとで好きに追加）
-    st.fsch.ev[st.fsch.count++] = (FrameEvent){ .frame = 44100 * 10, .id = 0, .enabled = true, .fired = false }; // 10秒
-    st.fsch.ev[st.fsch.count++] = (FrameEvent){ .frame = 44100 * 20, .id = 1, .enabled = true, .fired = false }; // 20秒
-
-    // ※ frame昇順に並べておく（手で並べる/起動時にsort）
-
     SDL_PauseAudioDevice(st.dev, 0);
 
     for (int i = 0; i < 128; i++) {
@@ -521,26 +514,11 @@ bool musicEventInit() {
     for (int i = 0; i < TICK_MAX; i++) st.tickHandlers[i] = NULL;
     for (int i = 0; i < FRAME_EV_MAX; i++) st.frameHandlers[i] = NULL;
 
-    st.tickHandlers[TICK_BEAT] = on_tick_beat;
-    st.tickHandlers[TICK_HALF] = on_tick_half;
-    st.tickHandlers[TICK_QUARTER] = on_tick_quarter;
-    st.tickHandlers[TICK_TRIPLET] = on_tick_triplet;
-    st.tickHandlers[TICK_BACKBEAT_2_4] = on_tick_half;
-    st.frameHandlers[0] = on_frame_event_0;
-    st.frameHandlers[1] = on_frame_event_1;
-
     // 連打抑制 30ms（好みで20～50ms）
     st.debounceSamples = (int64_t)((double)st.spec.freq * 30.0 / 1000.0 + 0.5);
 
     return true;
 }
-
-static void on_tick_beat(AppState* st) { system("cls"); printf("B\n"); }
-static void on_tick_half(AppState* st) { system("cls"); printf("H %d\n", rand()); }
-static void on_tick_quarter(AppState* st) { system("cls"); printf("-\n"); }
-static void on_tick_triplet(AppState* st) { /* ここに任意処理 */ }
-static void on_frame_event_0(AppState* st, int musicFrame) { (void)st; (void)musicFrame; /* 任意処理 */ }
-static void on_frame_event_1(AppState* st, int musicFrame) { (void)st; (void)musicFrame; /* 任意処理 */ }
 
 void musicEventUpdate() {
 

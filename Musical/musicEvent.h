@@ -108,7 +108,7 @@ typedef struct AppState {
 } AppState;
 
 
-bool musicEventInit();
+bool musicEventInit(const char* musicPath, const char* midiPath);
 void musicEventUpdate();
 char* getInfo();
 void musicEventQuit();

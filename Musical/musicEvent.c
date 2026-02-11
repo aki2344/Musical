@@ -507,15 +507,15 @@ bool musicEventInit(const char* musicPath, const char* midiPath) {
 
     // 初期BPM反映
     st.samplesPerBeat = (double)st.spec.freq * 60.0 / st.bpm;
-    st.offsetFrames = 400.0 / 1000.0 * (double)st.spec.freq;
-
+    st.offsetFrames = 0 / 1000.0 * (double)st.spec.freq;
+     
     st.beatAbs = st.offsetFrames / st.samplesPerBeat;
 
     // 1フレームあたりの拍増分
     st.beatInc = 1.0 / st.samplesPerBeat;
 
     // レーン定義
-    st.lanes[TICK_BEAT] = (TickLane){ .enabled = false,  .stepBeat = 1.0 };
+    st.lanes[TICK_BEAT] = (TickLane){ .enabled = true,  .stepBeat = 1.0 };
     st.lanes[TICK_HALF] = (TickLane){ .enabled = false, .stepBeat = 0.5 };
     st.lanes[TICK_QUARTER] = (TickLane){ .enabled = false, .stepBeat = 0.25 };
     st.lanes[TICK_TRIPLET] = (TickLane){ .enabled = false, .stepBeat = 1.0 / 3.0 };
@@ -529,6 +529,9 @@ bool musicEventInit(const char* musicPath, const char* midiPath) {
 
     st.fsch.count = 0;
     st.fsch.next = 0;
+
+    st.audioOffsetMs = 840;
+    st.audioOffsetFrames = (int64_t)llround(st.audioOffsetMs * (double)st.spec.freq / 1000.0);
 
     SDL_PauseAudioDevice(st.dev, 0);
 
@@ -588,7 +591,7 @@ void musicEventUpdate() {
         st.clickPos = 0;
     }
     else if (getKeyDown(SDL_SCANCODE_R)) {
-        reset_transport_locked(&st, 70.0);
+        reset_transport_locked(&st, -st.audioOffsetMs);
     }
     /*else if (getKeyDown(SDL_SCANCODE_ESCAPE)) {
         isRunning = false;

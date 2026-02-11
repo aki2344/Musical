@@ -33,6 +33,7 @@ typedef struct AppState {
     int64_t  musicFrames;         // frames (not samples)
     int64_t  musicPos;            // frame index
     bool musicLoop;
+    bool paused;
 
     double bpm;
     double audioOffsetMs;    // WAV再生位置へ加算するオフセット(ms)
@@ -59,6 +60,9 @@ bool musicEventInit(const char* musicPath, const char* midiPath);
 void musicEventUpdate();
 char* getInfo();
 void musicEventQuit();
+void musicEventSetPaused(bool paused);
+bool musicEventIsPaused(void);
+void musicEventTogglePaused(void);
 
 bool musicEventRegisterMidiTrackHandler(uint8_t track, MidiTrackHandler handler);
 void musicEventUnregisterMidiTrackHandler(uint8_t track);

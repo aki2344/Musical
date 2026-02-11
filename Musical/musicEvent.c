@@ -141,6 +141,10 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
 
     SDL_memset(out, 0, len);
 
+    if (st->paused) {
+        return;
+    }
+
     {
         int64_t startS = music_pos_for_midi(st);
         int64_t endS = startS + (int64_t)frames;
@@ -196,6 +200,7 @@ bool musicEventInit(const char* musicPath, const char* midiPath) {
     SDL_zero(st);
     st.musicLoop = true;
     st.musicGain = 0.8f;
+    st.paused = false;
     st.bpm = 188;
     st.audioOffsetMs = 0.0;
     st.audioOffsetFrames = 0;
@@ -286,8 +291,8 @@ void musicEventUpdate() {
     SDL_UnlockAudioDevice(st.dev);
 
     SDL_snprintf(info, sizeof(info),
-        "AudioOffset: %+0.2f ms | Sec: %f | Frame: %lld\n",
-        audioOffsetMs, sec, (long long)frame);
+        "AudioOffset: %+0.2f ms | Sec: %f | Frame: %lld | Music: %s (SPACE/BACK)\n",
+        audioOffsetMs, sec, (long long)frame, st.paused ? "Paused" : "Playing");
 
     AppEvent ev;
     while (evq_pop(&st.evq, &ev)) {
@@ -295,6 +300,29 @@ void musicEventUpdate() {
             dispatch_midi_note(&st, &ev);
         }
     }
+}
+
+void musicEventSetPaused(bool paused) {
+    if (!st.dev) return;
+    SDL_LockAudioDevice(st.dev);
+    st.paused = paused;
+    SDL_UnlockAudioDevice(st.dev);
+}
+
+bool musicEventIsPaused(void) {
+    bool paused = false;
+    if (!st.dev) return false;
+    SDL_LockAudioDevice(st.dev);
+    paused = st.paused;
+    SDL_UnlockAudioDevice(st.dev);
+    return paused;
+}
+
+void musicEventTogglePaused(void) {
+    if (!st.dev) return;
+    SDL_LockAudioDevice(st.dev);
+    st.paused = !st.paused;
+    SDL_UnlockAudioDevice(st.dev);
 }
 
 bool musicEventRegisterMidiTrackHandler(uint8_t track, MidiTrackHandler handler) {

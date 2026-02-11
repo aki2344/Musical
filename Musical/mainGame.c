@@ -121,6 +121,13 @@ static void init() {
  */
 static void update() {
     musicEventUpdate();
+    bool pauseToggle =
+        getKeyDown(SDL_SCANCODE_SPACE) ||
+        getGamepadButtonDown(0, SDL_CONTROLLER_BUTTON_BACK);
+    if (pauseToggle) {
+        musicEventTogglePaused();
+    }
+
     bool esc =
         getKeyDown(SDL_SCANCODE_ESCAPE) ||
         getGamepadButtonDown(0, SDL_CONTROLLER_BUTTON_GUIDE);

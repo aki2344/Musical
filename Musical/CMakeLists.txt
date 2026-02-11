@@ -32,10 +32,10 @@ add_executable(Musical
   vector2.c
   main.c
   mainGame.c
+  musicEvent.c
+  midi_smf.c
   title.c
   particle.c
-  jewelry.c
-  player.c
   enemy.c
   star.c
 )

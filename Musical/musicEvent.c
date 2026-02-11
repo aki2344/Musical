@@ -254,39 +254,40 @@ void musicEventUpdate() {
     if (mod & KMOD_CTRL)  msStep = 0.1;
 
     SDL_LockAudioDevice(st.dev);
-    if (getKeyDown(SDL_SCANCODE_LEFT)) {
+    bool left =
+        getKeyDown(SDL_SCANCODE_RIGHT) ||
+        getGamepadButtonDown(0, SDL_CONTROLLER_BUTTON_DPAD_UP);
+    bool right =
+        getKeyDown(SDL_SCANCODE_LEFT) ||
+        getGamepadButtonDown(0, SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+    bool start =
+        getKeyDown(SDL_SCANCODE_R) ||
+        getGamepadButtonDown(0, SDL_CONTROLLER_BUTTON_START);
+    if(left){
         st.audioOffsetMs -= msStep;
         st.audioOffsetFrames = (int64_t)llround(st.audioOffsetMs * (double)st.spec.freq / 1000.0);
         SDL_Log("[musicEvent] audioOffsetMs=%+0.2f (frames=%lld)", st.audioOffsetMs, (long long)st.audioOffsetFrames);
     }
-    else if (getKeyDown(SDL_SCANCODE_RIGHT)) {
+    else if (right) {
         st.audioOffsetMs += msStep;
         st.audioOffsetFrames = (int64_t)llround(st.audioOffsetMs * (double)st.spec.freq / 1000.0);
         SDL_Log("[musicEvent] audioOffsetMs=%+0.2f (frames=%lld)", st.audioOffsetMs, (long long)st.audioOffsetFrames);
     }
-    else if (getKeyDown(SDL_SCANCODE_R)) {
+    else if (start) {
         st.musicPos = 0;
         st.nextEvIndex = lower_bound_note_by_sample(st.song.ev, st.song.evCount, (int64_t)st.musicPos);
         for (int i = 0; i < 128; i++) st.lastFiredSample[i] = -1;
         st.evq.r = 0;
         st.evq.w = 0;
     }
+    double audioOffsetMs = st.audioOffsetMs;
+    int64_t frame = music_pos_with_audio_offset(&st);
+    double sec = (double)frame / (double)st.spec.freq;
     SDL_UnlockAudioDevice(st.dev);
 
-    Uint32 now = SDL_GetTicks();
-    if (now - lastTitle > 100) {
-        lastTitle = now;
-
-        SDL_LockAudioDevice(st.dev);
-        double audioOffsetMs = st.audioOffsetMs;
-        int64_t frame = music_pos_with_audio_offset(&st);
-        double sec = (double)frame / (double)st.spec.freq;
-        SDL_UnlockAudioDevice(st.dev);
-
-        SDL_snprintf(info, sizeof(info),
-            "AudioOffset: %+0.2f ms | Sec: %f | Frame: %lld\n",
-            audioOffsetMs, sec, (long long)frame);
-    }
+    SDL_snprintf(info, sizeof(info),
+        "AudioOffset: %+0.2f ms | Sec: %f | Frame: %lld\n",
+        audioOffsetMs, sec, (long long)frame);
 
     AppEvent ev;
     while (evq_pop(&st.evq, &ev)) {

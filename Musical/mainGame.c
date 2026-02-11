@@ -16,7 +16,7 @@
  //#include "jewelry.h"
  //#include "player.h"
  //#include "particle.h"
- //#include "star.h"
+ #include "star.h"
 #include "gamepad.h"
 #include "musicEvent.h"
 #include <stdio.h>
@@ -109,6 +109,7 @@ static void init() {
     musicEventInit("sound/ss.wav", "sound/song.mid");
     
     enemyInit(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+    starInit();
 
     nowSequence = START;
 
@@ -120,6 +121,14 @@ static void init() {
  */
 static void update() {
     musicEventUpdate();
+    bool esc =
+        getKeyDown(SDL_SCANCODE_ESCAPE) ||
+        getGamepadButtonDown(0, SDL_CONTROLLER_BUTTON_GUIDE);
+    if (esc) {
+        isRunning = false;
+        setSequence(END);
+    }
+    
 }
 
 /**
@@ -132,6 +141,7 @@ static void draw() {
     DFA_DrawText(text, 10, 0, infoText.scale, 0, infoText.color, &layoutLeftCenter, getInfo());
     DFA_Update(64);
 
+    starDraw();
     enemyDraw();
 
     //ウィンドウの更新

@@ -102,6 +102,7 @@
     </ClCompile>
     <ClCompile Include="particle.c" />
     <ClCompile Include="sprite.c" />
+    <ClCompile Include="star.c" />
     <ClCompile Include="title.c" />
     <ClCompile Include="vector2.c" />
   </ItemGroup>
@@ -122,6 +123,7 @@
     </ClInclude>
     <ClInclude Include="particle.h" />
     <ClInclude Include="sprite.h" />
+    <ClInclude Include="star.h" />
     <ClInclude Include="title.h" />
     <ClInclude Include="vector2.h" />
   </ItemGroup>

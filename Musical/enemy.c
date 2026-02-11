@@ -9,17 +9,18 @@ static Sprite enemy;
 
 static void kick(AppState* st, uint8_t track, uint8_t note, uint8_t vel, bool on) {
     if (!on)return;
-    printf("[MIDI] track=%u note=%u vel=%u on=%d\n", track, note, vel, on);
+    //printf("[MIDI] track=%u note=%u vel=%u on=%d\n", track, note, vel, on);
+    printf("[MIDI] scale=%f alpha=%d x=%f y=%f\n", 
+        enemy.scale, enemy.color.a, enemy.position.x, enemy.position.y);
     enemy.scale = 1.5f;
-    scaleTo(&enemy, 2);
+    scaleTo(&enemy, 2.0f);
     setEasing(easeOutElastic);
     setDuration(350);
     int range = 100;
-    float x = -range / 2 + (rand() % range) + 640 / 2;
-    float y = -range / 2 + (rand() % range) + 480 / 2;
-    moveTo(&enemy, x, y);
-    setEasing(easeOutCubic);
-    setDuration(0);
+    float x = -range / 2.0f + (float)(rand() % range) + 640 / 2.0f;
+    float y = -range / 2.0f + (float)(rand() % range) + 480 / 2.0f;
+    enemy.position.x = x;
+    enemy.position.y = y;
 }
 
 void enemyInit(int x, int y) {

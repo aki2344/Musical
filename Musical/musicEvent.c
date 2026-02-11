@@ -267,7 +267,7 @@ void musicEventUpdate() {
         getGamepadButtonDown(0, SDL_CONTROLLER_BUTTON_DPAD_DOWN);
     bool start =
         getKeyDown(SDL_SCANCODE_R) ||
-        getGamepadButtonDown(0, SDL_CONTROLLER_BUTTON_START);
+        getGamepadButtonDown(0, SDL_CONTROLLER_BUTTON_BACK);
     if(left){
         st.audioOffsetMs -= msStep;
         st.audioOffsetFrames = (int64_t)llround(st.audioOffsetMs * (double)st.spec.freq / 1000.0);

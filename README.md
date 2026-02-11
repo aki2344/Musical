@@ -104,28 +104,14 @@ The startup shell script only changes the project name.
 
 ### 1.2 イベント・再生関連（musicEvent.h）
 
-#### `TickId`（列挙）
-* **役割**: 拍・サブディビジョンの識別子。  
-* **代表値**: `TICK_BEAT`（1拍）、`TICK_HALF`（2分音符）、`TICK_TRIPLET`（3連）、`TICK_BACKBEAT_2_4` など。  
-* **利用先**: `TickLane`・`AppEvent` で拍イベントを生成。  
-
-#### `TickLane`
-* **役割**: 「何拍ごとにイベントを出すか」を定義。  
-* **重要なフィールド**  
-  * `stepBeat`: 発火間隔（拍単位）。  
-  * `phaseBeat`: 位相シフト。  
-  * `nextBeat`: 次に発火する絶対拍位置。  
-* **利用先**: audio callback 中に `beatAbs` と比較し、tickイベントを生成。  
-
 #### `EvKind`（列挙）
-* **役割**: アプリ内イベントの種類を識別（Tick/Frame/MIDI）。  
+* **役割**: アプリ内イベントの種類を識別（現在は `EV_MIDI_NOTE` のみ）。  
 
 #### `AppEvent`
-* **役割**: メインスレッドで処理されるイベント形式。  
+* **役割**: メインスレッドで処理されるMIDIイベント形式。  
 * **重要なフィールド**  
-  * `kind`: `EV_TICK`, `EV_FRAME`, `EV_MIDI_NOTE`。  
-  * `id`: tickやframeイベントのID。  
-  * `on`/`note`/`vel`/`sample`: MIDIイベント情報。  
+  * `kind`: `EV_MIDI_NOTE`。  
+  * `track`/`on`/`note`/`vel`/`sample`: MIDIイベント情報。  
 * **利用先**: `EventQueue` に入り、`musicEventUpdate` で処理。  
 
 #### `EventQueue`
@@ -134,26 +120,12 @@ The startup shell script only changes the project name.
   * `w`/`r`: write/read index。  
   * `lock`: スピンロックで排他。  
 
-#### `FrameEvent`
-* **役割**: 特定フレームに到達したら発火するイベント。  
-* **利用先**: `FrameScheduler` から `EV_FRAME` を生成。  
-
-#### `FrameScheduler`
-* **役割**: `FrameEvent` の管理。  
-* **重要なフィールド**: `count`（登録数）、`next`（次に評価するインデックス）。  
-
-#### `NoteHandler`
-* **役割**: MIDIノートに対応するコールバック型。  
-* **利用先**: `AppState.noteMap` のディスパッチに使用。  
-
 #### `AppState`
 * **役割**: 再生・イベント・MIDI同期の中心状態。  
 * **主要構成**  
-  * **音源関連**: `music`, `click`, `musicPos`, `musicFrames`, `musicGain`, `clickGain` など。  
-  * **テンポ管理**: `bpm`, `samplesPerBeat`, `beatAbs`, `beatInc`, `offsetFrames`。  
-  * **拍イベント**: `lanes[TICK_MAX]`。  
-  * **イベント駆動**: `evq`, `fsch`。  
-  * **MIDI**: `song`、`nextEvIndex`、`noteMap`。  
+  * **音源関連**: `music`, `musicPos`, `musicFrames`, `musicGain` など。  
+  * **イベント駆動**: `evq`。  
+  * **MIDI**: `song`、`nextEvIndex`、`midiTrackMap`。  
 
 ---
 
@@ -339,7 +311,7 @@ SMF(Type1) は、次のチャンク列です。
 ## 3. 機能解説（musicEvent.c）
 
 ### 3.1 目的と全体構造
-`musicEvent.c` は **音声再生とMIDI/tickイベントを同期的に生成し、メインループでイベントを処理する** モジュールです。  
+`musicEvent.c` は **音声再生とMIDIイベントを同期的に生成し、メインループでイベントを処理する** モジュールです。  
 全体の流れは以下です。  
 
 1. `musicEventInit` で SDL音声デバイス・WAV・MIDI・イベント設定を初期化。  
@@ -357,66 +329,40 @@ SMF(Type1) は、次のチャンク列です。
 #### (1) MIDIイベントのディスパッチ `dispatch_midi_note`
 * `AppEvent.kind == EV_MIDI_NOTE` の場合のみ処理。  
 * **デバウンス処理**により短時間連打を抑制。  
-* `noteMap` に登録された `NoteHandler` を呼び出す。  
+* `midiTrackMap` に登録された `MidiTrackHandler` を呼び出す。  
 
-#### (2) TickLane管理
-* `wrap_phase`, `frac01`, `rebase_lanes`, `sync_offset_from_beatAbs`  
-  * `beatAbs` の進行に合わせて `nextBeat` を更新。  
-  * phaseを考慮してメトロノームやオフビートを実現。  
-
-#### (3) EventQueue
+#### (2) EventQueue
 * `evq_push` / `evq_pop`  
   * SDL_SpinLock で排他し、リアルタイムスレッド⇔メインスレッドを接続。  
 
-#### (4) BPM/位相操作
-* `set_bpm_locked`  
-  * BPM変更時に拍位置を保持し、laneを再調整。  
-* `shift_phase_frames_locked` / `shift_phase_ms_locked`  
-  * シフト分だけ拍位置を進めたり戻したりする。  
-* `reset_transport_locked`  
-  * 音楽位置・クリック・拍・イベント状態をリセット。  
-
-#### (5) 音源準備
+#### (3) 音源準備
 * `load_wav_as_f32`  
   * SDLの変換機構でWAVをターゲット形式へ。  
-* `make_click_f32`  
-  * 短いクリック音を合成してメトロノーム用に生成。  
 
-#### (6) MIDIイベント生成
+#### (4) MIDIイベント生成
 * `push_midi_range`  
   * `MidiSong.ev` から「指定サンプル範囲内のMIDIイベント」をキューへ格納。  
 
-#### (7) オーディオコールバック `audio_cb`
+#### (5) オーディオコールバック `audio_cb`
 * **MIDIイベントの生成**  
   * `musicPos` と `frames` から範囲を計算し `push_midi_range` を呼ぶ。  
   * ループ時は範囲を分割し、`nextEvIndex` をリセット。  
-* **拍（Tick）イベント生成**  
-  * `beatAbs` と `TickLane.nextBeat` を比較して `EV_TICK` を生成。  
-* **Frameイベント生成**  
-  * `FrameScheduler` で `musicPos` 到達時に `EV_FRAME` を生成。  
 * **音声ミックス**  
-  * `music` と `click` を加算し、クリッピングを抑制。  
+  * `music` を出力へ加算し、クリッピングを抑制。  
 * **位置更新**  
-  * `musicPos` と `clickPos` を進める。  
+  * `musicPos` を進める。  
 
-#### (8) 初期化 `musicEventInit`
+#### (6) 初期化 `musicEventInit`
 * SDL Audio デバイスを開く。  
-* `sound/ss.wav` を読み込み、クリック音を合成。  
+* `sound/ss.wav` を読み込む。  
 * MIDIを読み込み `MidiSong` に格納。  
-* BPM/拍設定、`TickLane` 初期化。  
-* `FrameScheduler` に特定フレームイベントを登録。  
-* `noteMap` にMIDIノートのハンドラを登録。  
 
-#### (9) 更新ループ `musicEventUpdate`
-* キーボード操作でBPM調整や位相シフトを行う。  
-* イベントキューを取り出し、  
-  * MIDI → `dispatch_midi_note`  
-  * Frame → `on_frame_event_*`  
-  * Tick → `on_tick_*`  
-  を呼び出す。  
-* タイトル情報（BPM/Offset/Frameなど）を更新する。  
+#### (7) 更新ループ `musicEventUpdate`
+* キーボード操作で AudioOffset（左右キー）とリセット（R）を操作。  
+* イベントキューを取り出し、MIDIイベントをディスパッチ。  
+* タイトル情報（AudioOffset/Frameなど）を更新する。  
 
-#### (10) 終了処理 `musicEventQuit`
+#### (8) 終了処理 `musicEventQuit`
 * `free_midi_song` によりMIDIリソースを解放。  
 
 ---
@@ -431,14 +377,14 @@ SMF(Type1) は、次のチャンク列です。
 → `audio_cb` で時間進行に合わせて `EventQueue` に `AppEvent` を投入。  
 
 **メインスレッド処理層（musicEventUpdate）**  
-→ `EventQueue` を消費し、MIDI/拍/フレームイベントごとに処理を振り分け。  
+→ `EventQueue` を消費し、MIDIイベントを処理。  
 
 ---
 
 ## 5. 使用時の一連の流れ（まとめ）
 
 1. **初期化**: `musicEventInit`  
-   * WAVとMIDIを読み込み、拍・イベントを構成。  
+   * WAVとMIDIを読み込み、イベントを構成。  
 2. **再生/更新ループ**:  
    * `audio_cb` が音声再生とイベント生成を行う。  
    * `musicEventUpdate` がイベントを処理。  
@@ -447,76 +393,13 @@ SMF(Type1) は、次のチャンク列です。
 
 ---
 
-## 6. `musicEvent.c` Handler（Tick / Frame / MidiTrack）追加・削除手順
+## 6. `musicEvent.c` Handler（MidiTrack）追加・削除手順
 
 ここでは、実際にプログラマーがどの順番で設定すれば安全に動かせるかを、`musicEvent.h` の公開APIベースで説明します。
 
 > 重要: `musicEvent.c` 側の登録/削除関数は内部で `SDL_LockAudioDevice` を使用し、オーディオコールバックとの競合を避ける設計です。`st` を直接編集せず、公開関数を経由して設定してください。
 
-### 6.1 Tick Handler（拍イベント）
-
-#### 役割
-* `TickId` ごと（`TICK_BEAT` など）に、拍イベント発火時の処理を差し替えます。
-
-#### 追加（登録）手順
-1. `TickHandler` シグネチャ（`void (*)(AppState* st)`）の関数を作成する。
-2. `musicEventRegisterTickHandler(id, handler)` を呼ぶ。
-3. 必要なら `musicEventSetTickEnabled(id, true)` で lane を有効化する。
-
-```c
-static void onMyBeat(struct AppState* st) {
-    (void)st;
-    // 任意処理
-}
-
-musicEventRegisterTickHandler(TICK_BEAT, onMyBeat);
-musicEventSetTickEnabled(TICK_BEAT, true);
-```
-
-#### 削除（解除）手順
-* `musicEventUnregisterTickHandler(id)` を呼ぶ。
-* 必要なら `musicEventSetTickEnabled(id, false)` も呼び、イベント生成自体を止める。
-
-#### 注意点
-* `id` が範囲外（`id < 0 || id >= TICK_MAX`）だと登録失敗または無視されます。
-* Handlerを解除しても lane が有効のままだと、イベント生成自体は継続します（呼び先が `NULL` になるだけ）。
-
----
-
-### 6.2 Frame Handler（特定フレーム到達イベント）
-
-Frame 系は「いつ発火するか（FrameEvent）」と「発火時に何をするか（FrameHandler）」を分けて設定します。
-
-#### 追加（登録）手順
-1. `FrameHandler` 関数（`void (*)(AppState* st, int musicFrame)`）を作る。
-2. `musicEventRegisterFrameHandler(id, handler)` で処理を登録する。
-3. `musicEventAddFrameEvent(id, frame, enabled)` で発火タイミングを登録する。
-
-```c
-static void onBossWarning(struct AppState* st, int musicFrame) {
-    (void)st;
-    (void)musicFrame;
-    // 任意処理
-}
-
-musicEventRegisterFrameHandler(10, onBossWarning);
-musicEventAddFrameEvent(10, 44100 * 30, true); // 30秒地点
-```
-
-#### 更新・無効化・削除
-* 同じ `id` に `musicEventAddFrameEvent` を再実行すると、既存イベントを更新できます。
-* 一時停止したいだけなら `musicEventSetFrameEventEnabled(id, false)`。
-* イベント定義自体を削除するなら `musicEventRemoveFrameEvent(id)`。
-* 処理関数側も消すなら `musicEventUnregisterFrameHandler(id)`。
-
-#### 注意点
-* `id` は `0 <= id < FRAME_EV_MAX` が必須です。
-* `musicEventRemoveFrameEvent(id)` は対象が無いと `false` を返します。
-* FrameEventを削除しても、FrameHandlerの関数ポインタは残るため、不要なら明示的に unregister してください。
-
----
-
-### 6.3 MidiTrack Handler（MIDIトラック単位）
+### 6.1 MidiTrack Handler（MIDIトラック単位）
 
 #### 役割
 * MIDIイベントを「ノート番号」ではなく「トラック番号」単位で処理します。
@@ -551,12 +434,11 @@ musicEventSetMidiTrackEnabled(0, true);
 
 ---
 
-### 6.4 推奨セットアップ順（実運用）
+### 6.2 推奨セットアップ順（実運用）
 
 1. `musicEventInit()` を実行して、音声/MIDI/内部状態を初期化する。
-2. Tick / Frame / MidiTrack の各Handlerを register する。
-3. FrameEvent（発火フレーム）を add する。
-4. 必要な lane / frame event / track を enable する。
-5. メインループ内で `musicEventUpdate()` を継続実行する。
+2. 必要な MidiTrack Handler を register する。
+3. 必要に応じて `musicEventSetMidiTrackEnabled(track, true/false)` を設定する。
+4. メインループ内で `musicEventUpdate()` を継続実行する。
 
 この順序にしておくと、「処理関数未登録のままイベントだけ先に発火する」状態を避けやすくなります。

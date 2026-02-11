@@ -291,7 +291,7 @@ void musicEventUpdate() {
     SDL_UnlockAudioDevice(st.dev);
 
     SDL_snprintf(info, sizeof(info),
-        "AudioOffset: %+0.2f ms | Sec: %f | Frame: %lld | Music: %s (SPACE/BACK)\n",
+        "AudioOffset: %+0.2f ms | Sec: %f | Frame: %lld | Music: %s (SPACE/START) | Restart: SELECT\n",
         audioOffsetMs, sec, (long long)frame, st.paused ? "Paused" : "Playing");
 
     AppEvent ev;

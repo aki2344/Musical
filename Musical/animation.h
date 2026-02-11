@@ -36,10 +36,12 @@ typedef struct {
     void (*onFinished)();               ///< 終了時コールバック関数
     void* callbackTarget;
     float (*easing)(float ratio);     ///< イージング関数
-    int position;                       ///< 位置のアニメーションが有効かどうかのフラグ
-    int scale;                          ///< 大きさのアニメーションが有効かどうかのフラグ
-    int rotation;                       ///< 角度のアニメーションが有効かどうかのフラグ
-    int alpha;                          ///< 透明度のアニメーションが有効かどうかのフラグ
+    bool position;                       ///< 位置のアニメーションが有効かどうかのフラグ
+    bool scale;                          ///< 大きさのアニメーションが有効かどうかのフラグ
+    bool scaleX;                          ///< 大きさのアニメーションが有効かどうかのフラグ
+    bool scaleY;                          ///< 大きさのアニメーションが有効かどうかのフラグ
+    bool rotation;                       ///< 角度のアニメーションが有効かどうかのフラグ
+    bool alpha;                          ///< 透明度のアニメーションが有効かどうかのフラグ
     bool isEnabled;                     ///< アクティブかどうかのフラグ
     bool loop;                          ///< ループするかどうかのフラグ
     bool pause;                         ///< ポーズ中かどうかのフラグ
@@ -49,10 +51,14 @@ typedef struct {
 void easingUpdate(void);
 void moveTo(Sprite* g, float x, float y);
 void scaleTo(Sprite* g, float scale);
+void scaleXTo(Sprite* g, float scale);
+void scaleYTo(Sprite* g, float scale);
 void rotateTo(Sprite* g, float angle);
 void alphaTo(Sprite* g, float alpha);
 void moveAdd(Sprite* g, float x, float y);
 void scaleAdd(Sprite* g, float scale);
+void scaleXAdd(Sprite* g, float scale);
+void scaleYAdd(Sprite* g, float scale);
 void rotateAdd(Sprite* g, float angle);
 void alphaAdd(Sprite* g, float alpha);
 void stopAnimation(Sprite* g);

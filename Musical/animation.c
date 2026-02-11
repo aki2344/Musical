@@ -98,6 +98,12 @@ void easingUpdate() {
             if (e->scale) {
                 e->g->scale = e->startValue.scale + (e->targetValue.scale - e->startValue.scale) * ratio;
             }
+            if (e->scaleX) {
+                e->g->scaleX = e->startValue.scaleX + (e->targetValue.scaleX - e->startValue.scaleX) * ratio;
+            }
+            if (e->scaleY) {
+                e->g->scaleY = e->startValue.scaleY + (e->targetValue.scaleY - e->startValue.scaleY) * ratio;
+            }
             if(e->rotation)
                 e->g->rotation = e->startValue.rotation + (e->targetValue.rotation - e->startValue.rotation) * ratio;
             if (e->alpha) {
@@ -169,11 +175,39 @@ static void stopScale(Sprite* g) {
     }
 }
 /**
+* @brief スケールXアニメーションの停止
+*
+* @param g 停止させたいアニメーションのSprite型構造体の参照
+*/
+static void stopScaleX(Sprite* g) {
+
+    for (int i = 0; i < ANIMATION_MAX; i++)
+    {
+        if (list[i].isEnabled && list[i].g == g && list[i].scaleX) {
+            list[i].isEnabled = false;
+        }
+    }
+}
+/**
+* @brief スケールYアニメーションの停止
+*
+* @param g 停止させたいアニメーションのSprite型構造体の参照
+*/
+static void stopScaleY(Sprite* g) {
+
+    for (int i = 0; i < ANIMATION_MAX; i++)
+    {
+        if (list[i].isEnabled && list[i].g == g && list[i].scaleY) {
+            list[i].isEnabled = false;
+        }
+    }
+}
+/**
 * @brief 回転アニメーションの停止
 *
 * @param g 停止させたいアニメーションのSprite型構造体の参照
 */
-static void stoprotation(Sprite* g) {
+static void stopRotation(Sprite* g) {
 
     for (int i = 0; i < ANIMATION_MAX; i++)
     {
@@ -234,6 +268,40 @@ void scaleTo(Sprite* g, float scale) {
 }
 
 /**
+* @brief 指定の大きさXに変化
+*
+* @param g グラフィック
+* @param scale 目標の大きさ
+*/
+void scaleXTo(Sprite* g, float scale) {
+    Animation* data = get(g);
+    if (data == NULL)return;
+
+    stopScaleX(g);
+
+    data->targetValue.scaleX = scale;
+    data->scaleX = true;
+    current = data;
+}
+
+/**
+* @brief 指定の大きさYに変化
+*
+* @param g グラフィック
+* @param scale 目標の大きさ
+*/
+void scaleYTo(Sprite* g, float scale) {
+    Animation* data = get(g);
+    if (data == NULL)return;
+
+    stopScaleY(g);
+
+    data->targetValue.scaleY = scale;
+    data->scaleY = true;
+    current = data;
+}
+
+/**
 * @brief 指定の角度に回転
 *
 * @param g グラフィック
@@ -243,7 +311,7 @@ void rotateTo(Sprite* g, float rotation) {
     Animation* data = get(g);
     if (data == NULL)return;
 
-    stoprotation(g);
+    stopRotation(g);
 
     data->targetValue.rotation = rotation;
     data->rotation = true;
@@ -304,6 +372,40 @@ void scaleAdd(Sprite* g, float scale) {
 }
 
 /**
+* @brief 現在の大きさXから、指定した大きさだけ変化
+*
+* @param g グラフィック
+* @param scale 目標の大きさ
+*/
+void scaleXAdd(Sprite* g, float scale) {
+    Animation* data = get(g);
+    if (data == NULL)return;
+
+    stopScaleX(g);
+
+    data->targetValue.scaleX = data->startValue.scaleX + scale;
+    data->scaleX = true;
+    current = data;
+}
+
+/**
+* @brief 現在の大きさYから、指定した大きさだけ変化
+*
+* @param g グラフィック
+* @param scale 目標の大きさ
+*/
+void scaleYAdd(Sprite* g, float scale) {
+    Animation* data = get(g);
+    if (data == NULL)return;
+
+    stopScaleY(g);
+
+    data->targetValue.scaleY = data->startValue.scaleY + scale;
+    data->scaleY = true;
+    current = data;
+}
+
+/**
 * @brief 現在の角度から、指定した角度だけ回転
 *
 * @param g グラフィック
@@ -313,7 +415,7 @@ void rotateAdd(Sprite* g, float rotation) {
     Animation* data = get(g);
     if (data == NULL)return;
 
-    stoprotation(g);
+    stopRotation(g);
 
     data->targetValue.rotation = data->startValue.rotation + rotation;
     data->rotation = true;
@@ -479,6 +581,8 @@ void setLoop() {
 
 /**
 * @brief アニメーションのループタイプ設定をする
+*
+* @param type 設定したいループタイプ
 */
 void setLoopType(LoopType type) {
     current->loopType = type;
@@ -500,6 +604,11 @@ void setTimeout(Sprite* g, void(*onFinished)(), int duration) {
     current = data;
 }
 
+/**
+* @brief OnFinishedに渡される引数を指定
+*
+* @param p 引数に渡される変数の参照
+*/
 void setCallbackTarget(void* p) {
     current->callbackTarget = p;
 }

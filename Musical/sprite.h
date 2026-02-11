@@ -34,6 +34,8 @@ typedef struct {
     bool isEnabled;         ///< 表示のONOFFフラグ
     float rotation;        ///< 角度（ラジアン）
     float scale;           ///< 拡大率
+    float scaleX;           ///< 拡大率X
+    float scaleY;           ///< 拡大率Y
     float direction;       ///< 向き
     Vector2 v;              ///< 速度
     Vector2 accel;          ///< 加速度

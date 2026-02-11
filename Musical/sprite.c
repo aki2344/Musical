@@ -30,7 +30,7 @@ void spriteInit(Sprite *s, int id, float srcX, float srcY, float srcW, float src
     s->position = (Vector2) { 0, 0 };
 
     //倍率の指定
-    s->scale = 1;
+    s->scale = s->scaleX = s->scaleY = 1;
 
     //角度の指定
     s->rotation = 0;
@@ -136,8 +136,8 @@ void spriteDraw(Sprite *s) {
 */
 void spriteDrawOffset(Sprite *s, float x, float y) {
     if (s->isEnabled) {
-        s->dst.w = s->src.w * s->scale;
-        s->dst.h = s->src.h * s->scale;
+        s->dst.w = s->src.w * s->scale * s->scaleX;
+        s->dst.h = s->src.h * s->scale * s->scaleY;
         s->center.x = s->dst.w * s->pivot.x;
         s->center.y = s->dst.h * s->pivot.y;
         s->dst.x = s->position.x - s->center.x;
@@ -163,8 +163,8 @@ void spriteDrawOffset(Sprite *s, float x, float y) {
 */
 void spriteDrawEx(Sprite* s, Vector2 position, float rotation, float scale) {
     if (s->isEnabled) {
-        s->dst.w = s->src.w * scale;
-        s->dst.h = s->src.h * scale;
+        s->dst.w = s->src.w * scale * s->scaleX;
+        s->dst.h = s->src.h * scale * s->scaleY;
         s->center.x = s->dst.w / 2;
         s->center.y = s->dst.h / 2;
         s->dst.x = position.x - s->center.x;
@@ -202,8 +202,8 @@ bool spriteIntersectsRect(const Sprite *s1, const Sprite *s2) {
 
     int dx = abs(s1->position.x - s2->position.x);
     int dy = abs(s1->position.y - s2->position.y);
-    int w = s1->col.w * s1->scale + s2->col.w * s2->scale;
-    int h = s1->col.h * s1->scale + s2->col.h * s2->scale;
+    int w = s1->col.w * s1->scale * s1->scaleX + s2->col.w * s2->scale * s2->scaleX;
+    int h = s1->col.h * s1->scale * s1->scaleY + s2->col.h * s2->scale * s2->scaleY;
 
     return dx <= w / 2 && dy <= h / 2;
 }
@@ -247,8 +247,8 @@ bool spriteIntersectsPoint(const Sprite *s, float x, float y) {
     else {
         int dx = abs(x - s->position.x);
         int dy = abs(y - s->position.y);
-        int w = s->col.w * s->scale;
-        int h = s->col.h * s->scale;
+        int w = s->col.w * s->scale * s->scaleX;
+        int h = s->col.h * s->scale * s->scaleY;
 
         return dx <= w / 2 && dy <= h / 2;
 

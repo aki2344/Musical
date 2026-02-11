@@ -12,7 +12,7 @@
 #include "animation.h"
 #include "easing.h"
 #include "dynamic_font_atlas.h"
- //#include "enemy.h"
+#include "enemy.h"
  //#include "jewelry.h"
  //#include "player.h"
  //#include "particle.h"
@@ -107,10 +107,8 @@ static void init() {
     setOnFinished(start);
 
     musicEventInit("sound/ss.wav", "sound/song.mid");
-    // Track 0 はコンダクタートラック（テンポ/拍子）になりやすく、
-    // Noteイベントは Track 1 以降に入るケースが多い。
-    musicEventRegisterMidiTrackHandler(1, handle_midi_test);
-    musicEventSetMidiTrackEnabled(1, true);
+    
+    enemyInit(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
 
     nowSequence = START;
 
@@ -133,6 +131,8 @@ static void draw() {
     fillRect(&(SDL_FRect) { 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT }, 0.0f, 0.0f, 0.05f, 0.8f); 
     DFA_DrawText(text, 10, 0, infoText.scale, 0, infoText.color, &layoutLeftCenter, getInfo());
     DFA_Update(64);
+
+    enemyDraw();
 
     //ウィンドウの更新
     flip();

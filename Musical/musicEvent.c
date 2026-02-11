@@ -301,6 +301,16 @@ static void push_midi_range(AppState* st, int64_t endSampleExclusive)
     }
 }
 
+static int64_t music_pos_with_offset(const AppState* st)
+{
+    int64_t pos = st->musicPos + st->audioOffsetFrames;
+    if (st->musicLoop && st->musicFrames > 0) {
+        pos %= st->musicFrames;
+        if (pos < 0) pos += st->musicFrames;
+    }
+    return pos;
+}
+
 static void audio_cb(void* userdata, Uint8* stream, int len)
 {
     AppState* st = (AppState*)userdata;
@@ -314,7 +324,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
     // ---- MIDI: このcallback区間で到達するイベントをEVQへpush（catch-up）----
     {
         // WAVの再生フレームが時間基準
-        int64_t startS = (int64_t)st->musicPos;
+        int64_t startS = music_pos_with_offset(st);
         int64_t endS = startS + (int64_t)frames;
         int64_t L = (int64_t)st->musicFrames;
 
@@ -342,6 +352,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
 
         // -------- 音楽の終端処理（先にやると分かりやすい）
         bool musicOk = (st->music && st->musicFrames > 0);
+        int64_t musicCurPos = music_pos_with_offset(st);
         if (musicOk && st->musicPos >= st->musicFrames) {
             if (st->musicLoop) {
                 st->musicPos = 0;
@@ -353,6 +364,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
                 st->nextEvIndex = 0;
                 for (int i = 0; i < 128; i++) st->lastFiredSample[i] = -1;
 
+                musicCurPos = music_pos_with_offset(st);
             }
             else {
                 musicOk = false;
@@ -381,8 +393,8 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
         }
 
         // -------- 指定フレームイベント（★musicPosを出す“直前”に判定）
-        if (musicOk && st->musicPos < st->musicFrames) {
-            int cur = st->musicPos; // 今まさに出すフレーム
+        if (musicOk && musicCurPos < st->musicFrames) {
+            int cur = (int)musicCurPos; // 今まさに出すフレーム(オフセット適用後)
 
             FrameScheduler* fs = &st->fsch;
             while (fs->next < fs->count) {
@@ -404,8 +416,8 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
         for (int c = 0; c < ch; c++) {
             float v = 0.0f;
 
-            if (musicOk && st->musicPos < st->musicFrames) {
-                v += st->music[st->musicPos * ch + c] * st->musicGain;
+            if (musicOk && musicCurPos < st->musicFrames) {
+                v += st->music[musicCurPos * ch + c] * st->musicGain;
             }
 
             if (st->metroEnable && st->clickActive && st->click && st->clickPos < st->clickFrames) {
@@ -441,6 +453,8 @@ bool musicEventInit(const char* musicPath, const char* midiPath) {
     st.musicGain = 0.8f;
     st.clickGain = 0.9f;
     st.bpm = 188;
+    st.audioOffsetMs = 0.0;
+    st.audioOffsetFrames = 0;
 
     SDL_zero(want);
     want.freq = 44100;
@@ -536,7 +550,6 @@ void musicEventUpdate() {
     if (mod & KMOD_LSHIFT) msStep = 100.0;
     if (mod & KMOD_SHIFT) msStep = 10.0;
     if (mod & KMOD_CTRL)  msStep = 0.1;
-    double framesStep = (msStep * (double)st.spec.freq) / 1000.0;
 
     SDL_LockAudioDevice(st.dev);
     if (getKeyDown(SDL_SCANCODE_UP)) {
@@ -546,12 +559,16 @@ void musicEventUpdate() {
         set_bpm_locked(&st, st.bpm - bpmStep);
     }
     else if (getKeyDown(SDL_SCANCODE_LEFT)) {
-        // 左＝クリックを「早める」(位相を戻す)
-        shift_phase_ms_locked(&st, -msStep);
+        // 左＝内部オーディオ再生位置を早める
+        st.audioOffsetMs -= msStep;
+        st.audioOffsetFrames = (int64_t)llround(st.audioOffsetMs * (double)st.spec.freq / 1000.0);
+        SDL_Log("[musicEvent] audioOffsetMs=%+0.2f (frames=%lld)", st.audioOffsetMs, (long long)st.audioOffsetFrames);
     }
     else if (getKeyDown(SDL_SCANCODE_RIGHT)) {
-        // 右＝クリックを「遅らせる」
-        shift_phase_ms_locked(&st, +msStep);
+        // 右＝内部オーディオ再生位置を遅らせる
+        st.audioOffsetMs += msStep;
+        st.audioOffsetFrames = (int64_t)llround(st.audioOffsetMs * (double)st.spec.freq / 1000.0);
+        SDL_Log("[musicEvent] audioOffsetMs=%+0.2f (frames=%lld)", st.audioOffsetMs, (long long)st.audioOffsetFrames);
     }
     else if (getKeyDown(SDL_SCANCODE_SPACE)) {
         st.metroEnable = !st.metroEnable;
@@ -573,14 +590,15 @@ void musicEventUpdate() {
         SDL_LockAudioDevice(st.dev);
         double bpm = st.bpm;
         double offsetMs = st.offsetFrames * 1000.0 / (double)st.spec.freq;
+        double audioOffsetMs = st.audioOffsetMs;
         bool metro = st.metroEnable;
-        int frame = st.musicPos;
+        int64_t frame = music_pos_with_offset(&st);
         sec = (double)frame / (double)st.spec.freq;
         SDL_UnlockAudioDevice(st.dev);
 
         SDL_snprintf(info, sizeof(info),
-            "BPM: %.3f | Offset: %+0.2f ms | Metronome: %s | Sec: %f | Frame: %d\n",
-            bpm, offsetMs, metro ? "ON" : "OFF", sec, frame);
+            "BPM: %.3f | Offset: %+0.2f ms | AudioOffset: %+0.2f ms | Metronome: %s | Sec: %f | Frame: %lld\n",
+            bpm, offsetMs, audioOffsetMs, metro ? "ON" : "OFF", sec, (long long)frame);
     }
 
     AppEvent ev;

@@ -80,6 +80,8 @@ typedef struct AppState {
     double bpm;
     double samplesPerBeat;   // frames per beat (double)
     double offsetFrames;     // 累積表示用（位相オフセットの合計を保持）
+    double audioOffsetMs;    // WAV再生位置へ加算するオフセット(ms)
+    int64_t audioOffsetFrames; // WAV再生位置へ加算するオフセット(frames)
 
     float musicGain;
     float clickGain;

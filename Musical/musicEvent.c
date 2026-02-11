@@ -301,9 +301,21 @@ static void push_midi_range(AppState* st, int64_t endSampleExclusive)
     }
 }
 
-static int64_t music_pos_with_offset(const AppState* st)
+static int64_t music_pos_with_audio_offset(const AppState* st)
 {
     int64_t pos = st->musicPos + st->audioOffsetFrames;
+    if (st->musicLoop && st->musicFrames > 0) {
+        pos %= st->musicFrames;
+        if (pos < 0) pos += st->musicFrames;
+    }
+    return pos;
+}
+
+// MIDI同期は実オーディオの進行位置（musicPos）を基準にする。
+// audioOffsetは「WAVをどこから鳴らすか」のみを動かし、MIDI位置には反映しない。
+static int64_t music_pos_for_midi(const AppState* st)
+{
+    int64_t pos = st->musicPos;
     if (st->musicLoop && st->musicFrames > 0) {
         pos %= st->musicFrames;
         if (pos < 0) pos += st->musicFrames;
@@ -324,7 +336,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
     // ---- MIDI: このcallback区間で到達するイベントをEVQへpush（catch-up）----
     {
         // WAVの再生フレームが時間基準
-        int64_t startS = music_pos_with_offset(st);
+        int64_t startS = music_pos_for_midi(st);
         int64_t endS = startS + (int64_t)frames;
         int64_t L = (int64_t)st->musicFrames;
 
@@ -352,7 +364,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
 
         // -------- 音楽の終端処理（先にやると分かりやすい）
         bool musicOk = (st->music && st->musicFrames > 0);
-        int64_t musicCurPos = music_pos_with_offset(st);
+        int64_t musicCurPos = music_pos_with_audio_offset(st);
         if (musicOk && st->musicPos >= st->musicFrames) {
             if (st->musicLoop) {
                 st->musicPos = 0;
@@ -364,7 +376,7 @@ static void audio_cb(void* userdata, Uint8* stream, int len)
                 st->nextEvIndex = 0;
                 for (int i = 0; i < 128; i++) st->lastFiredSample[i] = -1;
 
-                musicCurPos = music_pos_with_offset(st);
+                musicCurPos = music_pos_with_audio_offset(st);
             }
             else {
                 musicOk = false;
@@ -592,7 +604,7 @@ void musicEventUpdate() {
         double offsetMs = st.offsetFrames * 1000.0 / (double)st.spec.freq;
         double audioOffsetMs = st.audioOffsetMs;
         bool metro = st.metroEnable;
-        int64_t frame = music_pos_with_offset(&st);
+        int64_t frame = music_pos_with_audio_offset(&st);
         sec = (double)frame / (double)st.spec.freq;
         SDL_UnlockAudioDevice(st.dev);
 

@@ -42,6 +42,7 @@ static Sprite pauseText;
 static Sprite gameOverText;
 static Sprite infoText;
 static Sprite board;
+static Sprite bg;
 static Sprite gauge[6];
 static Sprite blocks[BLOCK_MAX][BLOCK_MAX];
 static DFA_FontID text;
@@ -80,6 +81,11 @@ static void init() {
     //乱数の初期化
     srand((unsigned int)time(NULL));
 
+    //bgの初期化
+    spriteInit(&bg, loadImage("img/stage.png"), 0, 0, 256, 192);
+    bg.scale = 3;
+    bg.position.x = WINDOW_WIDTH / 2;
+    bg.position.y = WINDOW_HEIGHT / 2;
     //infoTextの初期化
     spriteInit(&infoText, 0, 0, 0, 0, 0);
     infoText.color = (SDL_Color){ 255, 255, 255, 255 };
@@ -143,9 +149,12 @@ static void update() {
  */
 static void draw() {
 
+    fillRect(&(SDL_FRect) { 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT }, 1.0f, 0.7f, 0.8f, 1.0f);
+    spriteDraw(&bg);
+
     //描画
-    fillRect(&(SDL_FRect) { 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT }, 0.0f, 0.0f, 0.05f, 0.8f); 
-    DFA_DrawText(text, 10, 0, infoText.scale, 0, infoText.color, &layoutLeftCenter, getInfo());
+    fillRect(&(SDL_FRect) { 0, 0, WINDOW_WIDTH, 20 }, 0.0f, 0.0f, 0.05f, 0.5f); 
+    DFA_DrawText(text, 10, 2, infoText.scale, 0, infoText.color, &layoutLeftCenter, getInfo());
     DFA_Update(64);
 
     starDraw();

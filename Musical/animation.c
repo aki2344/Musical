@@ -52,7 +52,8 @@ static Animation* get(Sprite* g) {
     data->duration = 500;
     data->endTime = data->startTime + data->duration;
     data->delay = 0;
-    data->position = data->scale = data->rotation = data->alpha = false;
+    data->position = data->scale = data->scaleX = data->scaleY = false;
+    data->rotation = data->alpha = data->color = false;
     data->loop = false;
     data->pastTime = 0;
     data->pause = false;
@@ -357,10 +358,10 @@ void alphaTo(Sprite* g, float alpha) {
 }
 
 /**
-* @brief 指定の透明度に変化
+* @brief 指定の色に変化
 *
 * @param g グラフィック
-* @param alpha 目標の透明度
+* @param color 目標の色
 */
 void colorTo(Sprite* g, SDL_Color color) {
     Animation* data = get(g);

@@ -38,7 +38,7 @@ void spriteInit(Sprite *s, int id, float srcX, float srcY, float srcW, float src
     //向きの指定
     s->direction = 0;
 
-    //向きの指定
+    //pivotの指定
     s->pivot = (SDL_FPoint){ 0.5f, 0.5f };
 
     //表示をON
@@ -163,10 +163,10 @@ void spriteDrawOffset(Sprite *s, float x, float y) {
 */
 void spriteDrawEx(Sprite* s, Vector2 position, float rotation, float scale) {
     if (s->isEnabled) {
-        s->dst.w = s->src.w * scale * s->scaleX;
-        s->dst.h = s->src.h * scale * s->scaleY;
-        s->center.x = s->dst.w / 2;
-        s->center.y = s->dst.h / 2;
+        s->dst.w = s->src.w * s->scale * s->scaleX;
+        s->dst.h = s->src.h * s->scale * s->scaleY;
+        s->center.x = s->dst.w * s->pivot.x;
+        s->center.y = s->dst.h * s->pivot.y;
         s->dst.x = position.x - s->center.x;
         s->dst.y = position.y - s->center.y;
         SDL_FRect dst = s->dst;

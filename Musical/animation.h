@@ -42,6 +42,7 @@ typedef struct {
     bool scaleY;                          ///< 大きさのアニメーションが有効かどうかのフラグ
     bool rotation;                       ///< 角度のアニメーションが有効かどうかのフラグ
     bool alpha;                          ///< 透明度のアニメーションが有効かどうかのフラグ
+    bool color;                          ///< 色のアニメーションが有効かどうかのフラグ
     bool isEnabled;                     ///< アクティブかどうかのフラグ
     bool loop;                          ///< ループするかどうかのフラグ
     bool pause;                         ///< ポーズ中かどうかのフラグ
@@ -55,12 +56,14 @@ void scaleXTo(Sprite* g, float scale);
 void scaleYTo(Sprite* g, float scale);
 void rotateTo(Sprite* g, float angle);
 void alphaTo(Sprite* g, float alpha);
+void colorTo(Sprite* g, SDL_Color color);
 void moveAdd(Sprite* g, float x, float y);
 void scaleAdd(Sprite* g, float scale);
 void scaleXAdd(Sprite* g, float scale);
 void scaleYAdd(Sprite* g, float scale);
 void rotateAdd(Sprite* g, float angle);
 void alphaAdd(Sprite* g, float alpha);
+void colorAdd(Sprite* g, SDL_Color color);
 void stopAnimation(Sprite* g);
 void pauseAnimation(Sprite* g);
 void resumeAnimation(Sprite* g);

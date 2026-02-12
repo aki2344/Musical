@@ -52,7 +52,7 @@ static Animation* get(Sprite* g) {
     data->duration = 500;
     data->endTime = data->startTime + data->duration;
     data->delay = 0;
-    data->position = data->scale = data->rotation = data->alpha = 0;
+    data->position = data->scale = data->rotation = data->alpha = false;
     data->loop = false;
     data->pastTime = 0;
     data->pause = false;
@@ -110,6 +110,13 @@ void easingUpdate() {
                 float start = (float)e->startValue.color.a;
                 float target = (float)e->targetValue.color.a;
                 e->g->color.a = (Uint8)(start + (target - start) * ratio + 0.5f);
+            }
+            if (e->color) {
+                SDL_Color start = e->startValue.color;
+                SDL_Color target = e->targetValue.color;
+                e->g->color.r = (Uint8)(start.r + (target.r - start.r) * ratio + 0.5f);
+                e->g->color.g = (Uint8)(start.g + (target.g - start.g) * ratio + 0.5f);
+                e->g->color.b = (Uint8)(start.b + (target.b - start.b) * ratio + 0.5f);
             }
 
             //easingの終了
@@ -230,6 +237,20 @@ static void stopAlpha(Sprite* g) {
         }
     }
 }
+/**
+* @brief 色のアニメーションの停止
+*
+* @param g 停止させたいアニメーションのSprite型構造体の参照
+*/
+static void stopColor(Sprite* g) {
+
+    for (int i = 0; i < ANIMATION_MAX; i++)
+    {
+        if (list[i].isEnabled && list[i].g == g && list[i].color) {
+            list[i].isEnabled = false;
+        }
+    }
+}
 
 /**
 * @brief 指定座標に移動
@@ -332,6 +353,23 @@ void alphaTo(Sprite* g, float alpha) {
 
     data->targetValue.color.a = alphaFromFloat(alpha);
     data->alpha = true;
+    current = data;
+}
+
+/**
+* @brief 指定の透明度に変化
+*
+* @param g グラフィック
+* @param alpha 目標の透明度
+*/
+void colorTo(Sprite* g, SDL_Color color) {
+    Animation* data = get(g);
+    if (data == NULL)return;
+
+    stopColor(g);
+
+    data->targetValue.color = color;
+    data->color = true;
     current = data;
 }
 
@@ -445,6 +483,24 @@ void alphaAdd(Sprite* g, float alpha) {
         data->targetValue.color.a = (Uint8)value;
     }
     data->alpha = true;
+    current = data;
+}
+
+/**
+* @brief 現在の透明度から、指定した分変化
+*
+* @param g グラフィック
+* @param alpha 目標の透明度
+*/
+void colorAdd(Sprite* g, SDL_Color color) {
+    Animation* data = get(g);
+    if (data == NULL)return;
+
+    stopColor(g);
+    data->targetValue.color.r = SDL_clamp(data->startValue.color.r + color.r, 0, 255);
+    data->targetValue.color.g = SDL_clamp(data->startValue.color.g + color.g, 0, 255);
+    data->targetValue.color.b = SDL_clamp(data->startValue.color.b + color.b, 0, 255);
+    data->color = true;
     current = data;
 }
 
